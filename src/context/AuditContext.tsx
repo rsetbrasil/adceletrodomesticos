@@ -24,6 +24,15 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
     const { db } = getClientFirebase();
     const logsCollection = collection(db, 'auditLogs');
     const q = query(logsCollection, orderBy('timestamp', 'desc'));
+    const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
+
+    if (disableRealtime) {
+      getDocs(q).then((querySnapshot) => {
+        const fetchedLogs = querySnapshot.docs.map(d => ({ ...d.data(), id: d.id })) as AuditLog[];
+        setAuditLogs(fetchedLogs);
+      }).catch(() => {}).finally(() => setIsLoading(false));
+      return;
+    }
 
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
         const fetchedLogs = querySnapshot.docs.map(d => ({ ...d.data(), id: d.id })) as AuditLog[];

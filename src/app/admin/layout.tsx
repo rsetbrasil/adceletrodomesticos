@@ -65,7 +65,7 @@ const isWithinCommercialHours = (start: string, end: string) => {
     return currentTime >= startTime && currentTime <= endTime;
 };
 
-export function ModeToggle() {
+function ModeToggle() {
   const { setTheme } = useTheme()
  
   return (
@@ -200,7 +200,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
                      <div className="flex items-center gap-2 sm:gap-4 self-end sm:self-center">
                          <ModeToggle />
                         <Button variant="outline" size="sm" asChild>
-                            <Link href="/">
+                            <Link href="/" prefetch={false}>
                                 <Store className="mr-2 h-4 w-4" />
                                 <span className="hidden sm:inline">Voltar à Loja</span>
                             </Link>

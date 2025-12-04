@@ -1,7 +1,7 @@
 // /src/lib/firebase-client.ts
 'use client';
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { getFirestore, Firestore } from "firebase/firestore";
+import { initializeFirestore, getFirestore, Firestore } from "firebase/firestore";
 import { getAuth, Auth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -20,11 +20,11 @@ let db: Firestore;
 if (typeof window !== 'undefined' && !getApps().length) {
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 } else if (typeof window !== 'undefined') {
     app = getApp();
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
 }
 
 export function getClientFirebase() {
@@ -33,11 +33,11 @@ export function getClientFirebase() {
     if (typeof window !== 'undefined' && !getApps().length) {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
-        db = getFirestore(app);
+        db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
     } else if (typeof window !== 'undefined') {
         app = getApp();
         auth = getAuth(app);
-        db = getFirestore(app);
+        db = initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false });
     }
     
     return { app, auth, db };

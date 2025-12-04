@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, getDocs } from 'firebase/firestore';
 import type { ChatMessage, ChatSession, ChatAttachment } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -108,6 +108,24 @@ export default function AtendimentoPage() {
     useEffect(() => {
         const sessionsRef = collection(db, 'chatSessions');
         const q = query(sessionsRef, orderBy('lastMessageAt', 'desc'));
+        const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
+
+        if (disableRealtime) {
+            let timer: ReturnType<typeof setInterval> | null = null;
+            const fetchSessions = async () => {
+                try {
+                    const snap = await getDocs(q);
+                    const fetchedSessions: ChatSession[] = [];
+                    snap.forEach(d => {
+                        fetchedSessions.push({ id: d.id, ...d.data() } as ChatSession);
+                    });
+                    setSessions(fetchedSessions);
+                } catch {}
+            };
+            fetchSessions();
+            timer = setInterval(fetchSessions, 30000);
+            return () => { if (timer) clearInterval(timer); };
+        }
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedSessions: ChatSession[] = [];
@@ -128,6 +146,24 @@ export default function AtendimentoPage() {
 
         const messagesRef = collection(db, 'chatSessions', selectedSession.id, 'messages');
         const q = query(messagesRef, orderBy('timestamp', 'asc'));
+        const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
+
+        if (disableRealtime) {
+            let timer: ReturnType<typeof setInterval> | null = null;
+            const fetchMessages = async () => {
+                try {
+                    const snap = await getDocs(q);
+                    const fetchedMessages: ChatMessage[] = [];
+                    snap.forEach(d => {
+                        fetchedMessages.push({ sessionId: selectedSession.id, ...d.data() } as ChatMessage);
+                    });
+                    setMessages(fetchedMessages);
+                } catch {}
+            };
+            fetchMessages();
+            timer = setInterval(fetchMessages, 30000);
+            return () => { if (timer) clearInterval(timer); };
+        }
 
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const fetchedMessages: ChatMessage[] = [];
