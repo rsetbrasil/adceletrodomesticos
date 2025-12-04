@@ -45,6 +45,29 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         const { db } = getClientFirebase();
         const settingsRef = doc(db, 'config', 'storeSettings');
+        const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
+        if (disableRealtime) {
+            let timer: ReturnType<typeof setInterval> | null = null;
+            const fetchOnce = async () => {
+                try {
+                    const docSnap = await getDoc(settingsRef);
+                    if (docSnap.exists()) {
+                        setSettings(docSnap.data() as StoreSettings);
+                    } else {
+                        await setDoc(settingsRef, initialSettings);
+                        setSettings(initialSettings);
+                    }
+                } catch {
+                    setSettings(initialSettings);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+            fetchOnce();
+            timer = setInterval(fetchOnce, 30000);
+            return () => { if (timer) clearInterval(timer); };
+        }
+
         const unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
             if (docSnap.exists()) {
                 setSettings(docSnap.data() as StoreSettings);

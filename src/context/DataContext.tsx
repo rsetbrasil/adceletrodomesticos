@@ -2,7 +2,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, getDocs } from 'firebase/firestore';
 import { getClientFirebase } from '@/lib/firebase-client';
 import type { Product, Category, Order, CommissionPayment, StockAudit, Avaria, CustomerInfo } from '@/lib/types';
 import { format, parseISO } from 'date-fns';
@@ -40,47 +40,139 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const { db } = getClientFirebase();
-    const productsUnsubscribe = onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'desc')), (snapshot) => {
-      const fetchedProducts = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Product));
-      setProducts(fetchedProducts.length > 0 ? fetchedProducts : initialProducts);
-      setIsLoading(false);
-    }, (error) => {
-        console.error("Error fetching products:", error);
-        setProducts(initialProducts); // Fallback to initial data on error
+    const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
+    let timers: ReturnType<typeof setInterval>[] = [];
+    let unsubs: (() => void)[] = [];
+
+    const poll = (fn: () => Promise<void>) => {
+      fn();
+      const t = setInterval(fn, 30000);
+      timers.push(t);
+    };
+
+    if (disableRealtime) {
+      poll(async () => {
+        try {
+          const snap = await getDocs(query(collection(db, 'products'), orderBy('createdAt', 'desc')));
+          const fetchedProducts = snap.docs.map(d => ({ ...d.data(), id: d.id } as Product));
+          setProducts(fetchedProducts.length > 0 ? fetchedProducts : initialProducts);
+          setIsLoading(false);
+        } catch {
+          setProducts(initialProducts);
+          setIsLoading(false);
+        }
+      });
+    } else {
+      const productsUnsubscribe = onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'desc')), (snapshot) => {
+        const fetchedProducts = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Product));
+        setProducts(fetchedProducts.length > 0 ? fetchedProducts : initialProducts);
         setIsLoading(false);
-    });
+      }, (error) => {
+          console.error("Error fetching products:", error);
+          setProducts(initialProducts);
+          setIsLoading(false);
+      });
+      unsubs.push(productsUnsubscribe);
+    }
 
-    const categoriesUnsubscribe = onSnapshot(query(collection(db, 'categories'), orderBy('order')), (snapshot) => {
-      setCategories(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category)));
-    }, (error) => {
-        console.error("Error fetching categories:", error);
-    });
+    if (disableRealtime) {
+      poll(async () => {
+        try {
+          const snap = await getDocs(query(collection(db, 'categories'), orderBy('order')));
+          setCategories(snap.docs.map(d => ({ ...d.data(), id: d.id } as Category)));
+        } catch {}
+      });
+    } else {
+      const categoriesUnsubscribe = onSnapshot(query(collection(db, 'categories'), orderBy('order')), (snapshot) => {
+        setCategories(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category)));
+      }, (error) => {
+          console.error("Error fetching categories:", error);
+          getDocs(query(collection(db, 'categories'), orderBy('order'))).then((snapshot) => {
+            setCategories(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category)));
+          }).catch(() => {});
+      });
+      unsubs.push(categoriesUnsubscribe);
+    }
 
-    const ordersUnsubscribe = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snapshot) => {
-      setOrders(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
-    }, (error) => {
-        console.error("Error fetching orders:", error);
-    });
+    if (disableRealtime) {
+      poll(async () => {
+        try {
+          const snap = await getDocs(query(collection(db, 'orders'), orderBy('date', 'desc')));
+          setOrders(snap.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
+        } catch {}
+      });
+    } else {
+      const ordersUnsubscribe = onSnapshot(query(collection(db, 'orders'), orderBy('date', 'desc')), (snapshot) => {
+        setOrders(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
+      }, (error) => {
+          console.error("Error fetching orders:", error);
+          getDocs(query(collection(db, 'orders'), orderBy('date', 'desc'))).then((snapshot) => {
+            setOrders(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Order)));
+          }).catch(() => {});
+      });
+      unsubs.push(ordersUnsubscribe);
+    }
 
-    const commissionPaymentsUnsubscribe = onSnapshot(query(collection(db, 'commissionPayments'), orderBy('paymentDate', 'desc')), (snapshot) => {
-      setCommissionPayments(snapshot.docs.map(d => d.data() as CommissionPayment));
-    }, (error) => console.error("Error fetching commission payments:", error));
+    if (disableRealtime) {
+      poll(async () => {
+        try {
+          const snap = await getDocs(query(collection(db, 'commissionPayments'), orderBy('paymentDate', 'desc')));
+          setCommissionPayments(snap.docs.map(d => d.data() as CommissionPayment));
+        } catch {}
+      });
+    } else {
+      const commissionPaymentsUnsubscribe = onSnapshot(query(collection(db, 'commissionPayments'), orderBy('paymentDate', 'desc')), (snapshot) => {
+        setCommissionPayments(snapshot.docs.map(d => d.data() as CommissionPayment));
+      }, (error) => {
+        console.error("Error fetching commission payments:", error);
+        getDocs(query(collection(db, 'commissionPayments'), orderBy('paymentDate', 'desc'))).then((snapshot) => {
+          setCommissionPayments(snapshot.docs.map(d => d.data() as CommissionPayment));
+        }).catch(() => {});
+      });
+      unsubs.push(commissionPaymentsUnsubscribe);
+    }
 
-    const stockAuditsUnsubscribe = onSnapshot(query(collection(db, 'stockAudits'), orderBy('createdAt', 'desc')), (snapshot) => {
-      setStockAudits(snapshot.docs.map(d => d.data() as StockAudit));
-    }, (error) => console.error("Error fetching stock audits:", error));
+    if (disableRealtime) {
+      poll(async () => {
+        try {
+          const snap = await getDocs(query(collection(db, 'stockAudits'), orderBy('createdAt', 'desc')));
+          setStockAudits(snap.docs.map(d => d.data() as StockAudit));
+        } catch {}
+      });
+    } else {
+      const stockAuditsUnsubscribe = onSnapshot(query(collection(db, 'stockAudits'), orderBy('createdAt', 'desc')), (snapshot) => {
+        setStockAudits(snapshot.docs.map(d => d.data() as StockAudit));
+      }, (error) => {
+        console.error("Error fetching stock audits:", error);
+        getDocs(query(collection(db, 'stockAudits'), orderBy('createdAt', 'desc'))).then((snapshot) => {
+          setStockAudits(snapshot.docs.map(d => d.data() as StockAudit));
+        }).catch(() => {});
+      });
+      unsubs.push(stockAuditsUnsubscribe);
+    }
 
-    const avariasUnsubscribe = onSnapshot(query(collection(db, 'avarias'), orderBy('createdAt', 'desc')), (snapshot) => {
-      setAvarias(snapshot.docs.map(d => d.data() as Avaria));
-    }, (error) => console.error("Error fetching avarias:", error));
+    if (disableRealtime) {
+      poll(async () => {
+        try {
+          const snap = await getDocs(query(collection(db, 'avarias'), orderBy('createdAt', 'desc')));
+          setAvarias(snap.docs.map(d => d.data() as Avaria));
+        } catch {}
+      });
+    } else {
+      const avariasUnsubscribe = onSnapshot(query(collection(db, 'avarias'), orderBy('createdAt', 'desc')), (snapshot) => {
+        setAvarias(snapshot.docs.map(d => d.data() as Avaria));
+      }, (error) => {
+        console.error("Error fetching avarias:", error);
+        getDocs(query(collection(db, 'avarias'), orderBy('createdAt', 'desc'))).then((snapshot) => {
+          setAvarias(snapshot.docs.map(d => d.data() as Avaria));
+        }).catch(() => {});
+      });
+      unsubs.push(avariasUnsubscribe);
+    }
 
     return () => {
-      productsUnsubscribe();
-      categoriesUnsubscribe();
-      ordersUnsubscribe();
-      commissionPaymentsUnsubscribe();
-      stockAuditsUnsubscribe();
-      avariasUnsubscribe();
+      unsubs.forEach(u => u());
+      timers.forEach(t => clearInterval(t));
     };
   }, []);
 

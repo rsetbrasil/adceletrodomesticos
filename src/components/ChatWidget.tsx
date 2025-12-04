@@ -77,8 +77,15 @@ export default function ChatWidget() {
 
     useEffect(() => {
         if (!visitorId) return;
-
+        const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
         const sessionRef = doc(db, 'chatSessions', visitorId);
+
+        if (disableRealtime) {
+            // In dev with restricted network, skip realtime
+            setSession(null);
+            setMessages([]);
+            return;
+        }
 
         const unsubscribeSession = onSnapshot(sessionRef, (docSnap) => {
             if (docSnap.exists()) {

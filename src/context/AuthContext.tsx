@@ -32,7 +32,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(initialUsers);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
@@ -41,17 +41,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     setIsLoading(true);
     const { db } = getClientFirebase();
-
-    const usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-        setUsers(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as User)));
-    },
-    (error) => {
-      console.error("Error fetching users:", error);
-      errorEmitter.emit('permission-error', new FirestorePermissionError({
-        path: 'users',
-        operation: 'list',
-      }));
-    });
+    const disableRealtime = process.env.NEXT_PUBLIC_DISABLE_FIRESTORE_LISTEN === 'true';
+    let unsubscribe: (() => void) | null = null;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    if (disableRealtime) {
+      const fetchUsers = async () => {
+        try {
+          const snap = await getDocs(collection(db, 'users'));
+          const fetched = snap.docs.map(d => ({ ...d.data(), id: d.id } as User));
+          setUsers(fetched.length > 0 ? fetched : initialUsers);
+        } catch {
+          setUsers(initialUsers);
+        }
+      };
+      fetchUsers();
+      timer = setInterval(fetchUsers, 30000);
+    } else {
+      unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+          const fetched = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as User));
+          setUsers(fetched.length > 0 ? fetched : initialUsers);
+      },
+      (error) => {
+        console.error("Error fetching users:", error);
+        errorEmitter.emit('permission-error', new FirestorePermissionError({
+          path: 'users',
+          operation: 'list',
+        }));
+        setUsers(initialUsers);
+      });
+    }
     
     try {
         const storedUser = localStorage.getItem('user');
@@ -65,11 +83,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
     }
     
-    return () => usersUnsubscribe();
+    return () => { if (unsubscribe) unsubscribe(); if (timer) clearInterval(timer); };
   }, []);
 
   const login = (username: string, pass: string) => {
-    const foundUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
+    const sourceUsers = users && users.length > 0 ? users : initialUsers;
+    const foundUser = sourceUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
 
     if (!foundUser) {
         toast({ title: 'Falha no Login', description: 'Usuário não encontrado.', variant: 'destructive' });
