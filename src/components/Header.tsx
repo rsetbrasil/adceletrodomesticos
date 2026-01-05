@@ -7,7 +7,7 @@ import Logo from './Logo';
 import { useCart } from '@/context/CartContext';
 import { useCustomerAuth } from '@/context/CustomerAuthContext';
 import { Button, buttonVariants } from './ui/button';
-import { ShoppingBag, User, Search } from 'lucide-react';
+import { ShoppingBag, User, Search, Settings } from 'lucide-react';
 import { CartSheet } from './CartSheet';
 import { cn } from '@/lib/utils';
 import { useEffect, useState } from 'react';
@@ -56,6 +56,14 @@ export default function Header() {
         </div>
 
         <div className="flex items-center gap-2">
+            <Link
+              href="/admin"
+              aria-label="Painel administrativo"
+              title="Painel administrativo"
+              className={cn(buttonVariants({ variant: "ghost", size: "icon" }))}
+            >
+              <Settings />
+            </Link>
             <Link href={customerLink} className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "sm:w-auto sm:px-4")}>
                 <User className="sm:mr-2" />
                 <span className="hidden sm:inline">Área do Cliente</span>
