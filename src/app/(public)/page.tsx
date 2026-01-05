@@ -74,47 +74,38 @@ export default function Home() {
   }, [allProducts]);
 
   const filteredAndSortedProducts = useMemo(() => {
-    let filtered = [...allProducts].filter(p => !p.isHidden);
+    const normalizedSearch = deferredSearch.trim().toLowerCase();
+    const available: Product[] = [];
+    const unavailable: Product[] = [];
 
-    if (filters.category !== 'all') {
-      filtered = filtered.filter((p) => p.category === filters.category);
-    }
-    
-    if (filters.subcategory !== 'all') {
-        filtered = filtered.filter((p) => p.subcategory === filters.subcategory);
-    }
+    for (const product of allProducts) {
+      if (product.isHidden) continue;
+      if (filters.category !== 'all' && product.category !== filters.category) continue;
+      if (filters.subcategory !== 'all' && product.subcategory !== filters.subcategory) continue;
+      if (normalizedSearch && !product.name.toLowerCase().includes(normalizedSearch)) continue;
 
-    if (deferredSearch) {
-      filtered = filtered.filter((p) =>
-        p.name.toLowerCase().includes(deferredSearch.toLowerCase())
-      );
+      if (product.stock > 0) available.push(product);
+      else unavailable.push(product);
     }
-    
-    // Split into available and unavailable
-    const available = filtered.filter(p => p.stock > 0);
-    const unavailable = filtered.filter(p => p.stock <= 0);
 
     const sortArray = (arr: Product[]) => {
-        switch (filters.sort) {
+      switch (filters.sort) {
         case 'price-asc':
-            arr.sort((a, b) => a.price - b.price);
-            break;
+          arr.sort((a, b) => a.price - b.price);
+          break;
         case 'price-desc':
-            arr.sort((a, b) => b.price - a.price);
-            break;
+          arr.sort((a, b) => b.price - a.price);
+          break;
         case 'newest':
-            arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            break;
-        default: // relevance
-            // No specific relevance logic, using default order
-            break;
-        }
-        return arr;
-    }
+          arr.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+          break;
+        default:
+          break;
+      }
+      return arr;
+    };
 
-    // Sort each array individually and then concatenate
     return [...sortArray(available), ...sortArray(unavailable)];
-
   }, [filters.category, filters.subcategory, filters.sort, deferredSearch, allProducts]);
 
   const ProductGridSkeleton = () => (

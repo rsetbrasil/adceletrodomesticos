@@ -16,6 +16,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import type { Product } from '@/lib/types';
 import { useData } from '@/context/DataContext';
 import CountdownTimer from '@/components/CountdownTimer';
+import { getClientFirebase } from '@/lib/firebase-client';
+import { doc, getDoc } from 'firebase/firestore';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -32,15 +34,48 @@ export default function ProductDetailPage() {
     if (isProductsLoading || !products) return null;
     return products.find(p => p.id === id) || null;
   }, [id, products, isProductsLoading]);
+
+  const [resolvedProduct, setResolvedProduct] = useState<Product | null>(null);
+  const [isResolving, setIsResolving] = useState(false);
+  
+  useEffect(() => {
+    setResolvedProduct(product);
+  }, [product]);
+
+  useEffect(() => {
+    if (!product) return;
+    if (product.longDescription && product.longDescription.trim().length > 0) return;
+
+    let cancelled = false;
+    setIsResolving(true);
+    try {
+      const { db } = getClientFirebase();
+      getDoc(doc(db, 'products', product.id)).then((snap) => {
+        if (cancelled) return;
+        if (!snap.exists()) return;
+        const full = { ...(snap.data() as Omit<Product, 'id'>), id: snap.id } as Product;
+        setResolvedProduct(full);
+      }).finally(() => {
+        if (cancelled) return;
+        setIsResolving(false);
+      });
+    } catch {
+      setIsResolving(false);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [product]);
   
   const handleAddToCart = () => {
-    if (!product) return;
-    addToCart(product);
+    if (!resolvedProduct) return;
+    addToCart(resolvedProduct);
     setIsCartOpen(true);
   };
 
 
-  if (isProductsLoading) {
+  if (isProductsLoading || isResolving) {
     return (
       <div className="container mx-auto py-24 text-center">
         <p>Carregando produto...</p>
@@ -48,7 +83,7 @@ export default function ProductDetailPage() {
     );
   }
 
-  if (!product) {
+  if (!resolvedProduct) {
     return (
       <div className="container mx-auto py-24 text-center">
         <h1 className="text-2xl font-bold">Produto não encontrado</h1>
@@ -61,9 +96,9 @@ export default function ProductDetailPage() {
     );
   }
   
-  const maxInstallments = product.maxInstallments ?? 10;
-  const installmentValue = maxInstallments > 0 ? product.price / maxInstallments : product.price;
-  const showCountdown = product.onSale && product.promotionEndDate && new Date(product.promotionEndDate) > new Date();
+  const maxInstallments = resolvedProduct.maxInstallments ?? 10;
+  const installmentValue = maxInstallments > 0 ? resolvedProduct.price / maxInstallments : resolvedProduct.price;
+  const showCountdown = resolvedProduct.onSale && resolvedProduct.promotionEndDate && new Date(resolvedProduct.promotionEndDate) > new Date();
 
 
   return (
@@ -77,20 +112,20 @@ export default function ProductDetailPage() {
         <div>
            <Carousel className="w-full">
               <CarouselContent>
-                {(product.imageUrls && product.imageUrls.length > 0) ? product.imageUrls.map((url, index) => (
+                {(resolvedProduct.imageUrls && resolvedProduct.imageUrls.length > 0) ? resolvedProduct.imageUrls.map((url, index) => (
                   <CarouselItem key={index}>
                     <div className="p-1">
                       <Card>
                         <CardContent className="relative aspect-square w-full flex items-center justify-center p-0 overflow-hidden rounded-lg">
                           <Image
                             src={url}
-                            alt={`${product.name} - imagem ${index + 1}`}
+                            alt={`${resolvedProduct.name} - imagem ${index + 1}`}
                             fill
                             className="object-contain"
                             sizes="(max-width: 768px) 100vw, 50vw"
                             quality={70}
                             priority={index === 0}
-                            data-ai-hint={product['data-ai-hint']}
+                            data-ai-hint={resolvedProduct['data-ai-hint']}
                           />
                         </CardContent>
                       </Card>
@@ -103,7 +138,7 @@ export default function ProductDetailPage() {
                         <CardContent className="relative aspect-square w-full flex items-center justify-center p-0 overflow-hidden rounded-lg bg-muted">
                            <Image
                             src="https://placehold.co/600x600.png"
-                            alt={product.name}
+                            alt={resolvedProduct.name}
                             fill
                             className="object-contain"
                             sizes="(max-width: 768px) 100vw, 50vw"
@@ -122,20 +157,20 @@ export default function ProductDetailPage() {
         </div>
         <div className="flex flex-col">
           <div className="flex items-center gap-2 mb-2">
-            <Badge variant="secondary" className="capitalize w-fit">{product.category}</Badge>
-            {product.subcategory && <Badge variant="outline" className="capitalize w-fit">{product.subcategory}</Badge>}
+            <Badge variant="secondary" className="capitalize w-fit">{resolvedProduct.category}</Badge>
+            {resolvedProduct.subcategory && <Badge variant="outline" className="capitalize w-fit">{resolvedProduct.subcategory}</Badge>}
           </div>
-          <h1 className="text-3xl lg:text-4xl font-bold font-headline text-primary">{product.name}</h1>
-          {product.code && <p className="text-sm text-muted-foreground mt-2">Cód. Item: {product.code}</p>}
-          <p className="text-muted-foreground mt-4 text-lg">{product.description}</p>
+          <h1 className="text-3xl lg:text-4xl font-bold font-headline text-primary">{resolvedProduct.name}</h1>
+          {resolvedProduct.code && <p className="text-sm text-muted-foreground mt-2">Cód. Item: {resolvedProduct.code}</p>}
+          <p className="text-muted-foreground mt-4 text-lg">{resolvedProduct.description}</p>
           
-          {showCountdown && <CountdownTimer endDate={product.promotionEndDate!} />}
+          {showCountdown && <CountdownTimer endDate={resolvedProduct.promotionEndDate!} />}
           
-          {product.paymentCondition && (
+          {resolvedProduct.paymentCondition && (
             <Alert className="mt-4 border-accent/50 text-accent-foreground bg-accent/5">
                 <Info className="h-5 w-5 text-accent" />
                 <AlertDescription className="font-semibold text-accent">
-                    {product.paymentCondition}
+                    {resolvedProduct.paymentCondition}
                 </AlertDescription>
             </Alert>
           )}
@@ -144,7 +179,7 @@ export default function ProductDetailPage() {
 
           <div className="space-y-4">
             <p className="text-4xl font-bold text-foreground">
-              {formatCurrency(product.price)}
+              {formatCurrency(resolvedProduct.price)}
             </p>
             {maxInstallments > 1 && (
               <p className="text-lg text-accent font-semibold">
@@ -154,13 +189,13 @@ export default function ProductDetailPage() {
           </div>
           
           <div className="mt-8">
-            {product.stock > 0 ? (
+            {resolvedProduct.stock > 0 ? (
               <>
                 <Button size="lg" onClick={handleAddToCart} className="w-full md:w-auto bg-accent hover:bg-accent/90">
                   <ShoppingCart className="mr-2 h-5 w-5" />
                   Adicionar ao Carrinho
                 </Button>
-                <p className="text-sm text-green-600 mt-2">Em estoque: {product.stock} unidades</p>
+                <p className="text-sm text-green-600 mt-2">Em estoque: {resolvedProduct.stock} unidades</p>
               </>
             ) : (
               <Button size="lg" disabled className="w-full md:w-auto">
@@ -175,7 +210,7 @@ export default function ProductDetailPage() {
             <CardTitle>Descrição Detalhada do Produto</CardTitle>
         </CardHeader>
         <CardContent>
-            <p className="text-muted-foreground whitespace-pre-line">{product.longDescription}</p>
+            <p className="text-muted-foreground whitespace-pre-line">{resolvedProduct.longDescription}</p>
         </CardContent>
       </Card>
     </div>
