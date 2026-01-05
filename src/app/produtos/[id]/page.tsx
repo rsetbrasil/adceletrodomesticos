@@ -88,6 +88,8 @@ export default function ProductDetailPage() {
                             fill
                             className="object-contain"
                             sizes="(max-width: 768px) 100vw, 50vw"
+                            quality={70}
+                            priority={index === 0}
                             data-ai-hint={product['data-ai-hint']}
                           />
                         </CardContent>
@@ -105,6 +107,8 @@ export default function ProductDetailPage() {
                             fill
                             className="object-contain"
                             sizes="(max-width: 768px) 100vw, 50vw"
+                            quality={70}
+                            priority
                           />
                         </CardContent>
                       </Card>

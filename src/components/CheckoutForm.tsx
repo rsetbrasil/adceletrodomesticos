@@ -82,6 +82,19 @@ const formatPhone = (value: string) => {
     return `(${digitsOnly.slice(0, 2)}) ${digitsOnly.slice(2, 7)}-${digitsOnly.slice(7, 11)}`;
 };
 
+const formatCpf = (value: string) => {
+  if (!value) return '';
+  const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
+  if (digitsOnly.length <= 3) return digitsOnly;
+  if (digitsOnly.length <= 6) {
+    return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3)}`;
+  }
+  if (digitsOnly.length <= 9) {
+    return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6)}`;
+  }
+  return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6, 9)}-${digitsOnly.slice(9)}`;
+};
+
 export default function CheckoutForm() {
   const { cartItems, getCartTotal, clearCart, setLastOrder, removeFromCart } = useCart();
   const { settings } = useSettings();
@@ -201,7 +214,7 @@ export default function CheckoutForm() {
     const message = [
       'Olá! Preciso de suporte para finalizar uma compra.',
       `Meu CPF: ${cpf}`,
-      'Apareceu que meu cadastro está bloqueado.',
+      'Apareceu que meu cadastro não está atualizado e não consigo prosseguir.',
     ].join('\n');
 
     const encodedMessage = encodeURIComponent(message);
@@ -211,8 +224,8 @@ export default function CheckoutForm() {
 
   const showBlockedCpfToast = (cpf: string) => {
     toast({
-      title: 'CPF bloqueado',
-      description: 'Seu cadastro está na lixeira. Fale com o suporte pelo WhatsApp para liberar.',
+      title: 'Cadastro não atualizado',
+      description: 'Seu cadastro não está atualizado e não é possível prosseguir. Fale com o suporte pelo WhatsApp.',
       variant: 'destructive',
       action: settings.storePhone ? (
         <ToastAction altText="Falar com suporte no WhatsApp" onClick={() => openSupportWhatsApp(cpf)}>
@@ -262,15 +275,15 @@ export default function CheckoutForm() {
       const normalizedCpf = cpfRaw.replace(/\D/g, '');
       if (blockedCpf && normalizedCpf === blockedCpf) {
         showBlockedCpfToast(blockedCpf);
-        form.setError('cpf', { type: 'manual', message: 'CPF bloqueado. Fale com o suporte.' });
+        form.setError('cpf', { type: 'manual', message: 'Cadastro não atualizado. Não é possível prosseguir.' });
         return;
       }
 
       const isBlocked = await checkCpfIsBlocked(cpfRaw);
       if (isBlocked) {
         showBlockedCpfToast(cpfRaw.replace(/\D/g, ''));
-        form.setError('cpf', { type: 'manual', message: 'CPF bloqueado. Fale com o suporte.' });
-      } else if (form.getFieldState('cpf').error?.message === 'CPF bloqueado. Fale com o suporte.') {
+        form.setError('cpf', { type: 'manual', message: 'Cadastro não atualizado. Não é possível prosseguir.' });
+      } else if (form.getFieldState('cpf').error?.message === 'Cadastro não atualizado. Não é possível prosseguir.') {
         form.clearErrors('cpf');
       }
     } catch {
@@ -437,7 +450,7 @@ export default function CheckoutForm() {
             <h3 className="text-xl font-semibold mb-4 font-headline">Informações do Cliente</h3>
             <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} onBlur={(e) => { field.onBlur(); void handleCpfBlurCheck(e.target.value); }} /></FormControl><FormMessage /></FormItem> )} />
+                    <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF</FormLabel><FormControl><Input placeholder="000.000.000-00" inputMode="numeric" {...field} onChange={(e) => field.onChange(formatCpf(e.target.value))} maxLength={14} onBlur={(e) => { field.onBlur(); void handleCpfBlurCheck(e.target.value); }} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Nome Completo</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="phone" render={({ field }) => ( <FormItem><FormLabel>Telefone (WhatsApp)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="phone2" render={({ field }) => ( <FormItem><FormLabel>Telefone 2 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />

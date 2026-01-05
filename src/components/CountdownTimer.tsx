@@ -30,15 +30,16 @@ const calculateTimeLeft = (endDate: string) => {
 };
 
 export default function CountdownTimer({ endDate }: CountdownTimerProps) {
-  const [timeLeft, setTimeLeft] = useState(calculateTimeLeft(endDate));
+  const [timeLeft, setTimeLeft] = useState(() => calculateTimeLeft(endDate));
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    setTimeLeft(calculateTimeLeft(endDate));
+    const timer = window.setInterval(() => {
       setTimeLeft(calculateTimeLeft(endDate));
     }, 1000);
 
-    return () => clearTimeout(timer);
-  });
+    return () => window.clearInterval(timer);
+  }, [endDate]);
   
   const hasTimeLeft = timeLeft.days > 0 || timeLeft.hours > 0 || timeLeft.minutes > 0 || timeLeft.seconds > 0;
   

@@ -16,7 +16,6 @@ import { Badge } from './ui/badge';
 import { useCart } from '@/context/CartContext';
 import type { Product } from '@/lib/types';
 import { ShoppingCart } from 'lucide-react';
-import CountdownTimer from './CountdownTimer';
 
 interface ProductCardProps {
   product: Product;
@@ -46,6 +45,14 @@ export default function ProductCard({ product }: ProductCardProps) {
   const installmentValue = maxInstallments > 1 ? product.price / maxInstallments : 0;
   
   const showCountdown = product.onSale && product.promotionEndDate && new Date(product.promotionEndDate) > new Date();
+  const promotionTimeLeft = (() => {
+    if (!showCountdown) return null;
+    const difference = new Date(product.promotionEndDate!).getTime() - Date.now();
+    if (difference <= 0) return null;
+    const days = Math.floor(difference / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((difference / (1000 * 60 * 60)) % 24);
+    return { days, hours };
+  })();
 
 
   return (
@@ -63,7 +70,8 @@ export default function ProductCard({ product }: ProductCardProps) {
               alt={product.name}
               fill
               className="object-contain p-2"
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+              sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, (max-width: 1280px) 33vw, 25vw"
+              quality={60}
               data-ai-hint={product['data-ai-hint']}
             />
           </div>
@@ -74,7 +82,11 @@ export default function ProductCard({ product }: ProductCardProps) {
             {product.subcategory && <Badge variant="outline" className="capitalize">{product.subcategory}</Badge>}
           </div>
           <CardTitle className="text-base md:text-lg font-semibold min-h-[40px]">{product.name}</CardTitle>
-          {showCountdown && <CountdownTimer endDate={product.promotionEndDate!} />}
+          {promotionTimeLeft && (
+            <p className="mt-2 text-xs font-semibold text-destructive">
+              Promoção termina em {promotionTimeLeft.days}d {promotionTimeLeft.hours}h
+            </p>
+          )}
           <CardDescription className="text-xs md:text-sm text-muted-foreground min-h-[32px] overflow-hidden">
             {product.description}
           </CardDescription>

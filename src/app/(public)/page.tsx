@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useDeferredValue, useTransition } from 'react';
 import type { Product, Category } from '@/lib/types';
 import ProductCard from '@/components/ProductCard';
 import ProductFilters from '@/components/ProductFilters';
@@ -30,30 +30,39 @@ export default function Home() {
   const { products: allProducts, categories, isLoading } = useData();
   const { headerSearch, setHeaderSearch } = useCart();
 
+  const [isPending, startTransition] = useTransition();
   const [filters, setFilters] = useState({
     category: 'all',
     subcategory: 'all',
     search: '',
     sort: 'newest',
   });
+  const deferredSearch = useDeferredValue(filters.search);
+  const INITIAL_VISIBLE_COUNT = 12;
+  const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
 
   useEffect(() => {
     if (headerSearch) {
       setFilters(prev => ({...prev, search: headerSearch}));
     }
   }, [headerSearch]);
+  
+  useEffect(() => {
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+  }, [filters.category, filters.subcategory, filters.search, filters.sort]);
 
   const handleFilterChange = (
     newFilters: Partial<typeof filters>
   ) => {
-    setFilters((prevFilters) => {
-        const updated = { ...prevFilters, ...newFilters };
-        // Reset subcategory if parent category changes
-        if (newFilters.category && newFilters.category !== prevFilters.category) {
-            updated.subcategory = 'all';
-        }
-        return updated;
-    });
+    startTransition(() => {
+      setFilters((prevFilters) => {
+          const updated = { ...prevFilters, ...newFilters };
+          if (newFilters.category && newFilters.category !== prevFilters.category) {
+              updated.subcategory = 'all';
+          }
+          return updated;
+      });
+    })
     // When filters are changed from the filter components, clear the header search
     if (newFilters.search !== undefined) {
       setHeaderSearch(newFilters.search);
@@ -61,7 +70,7 @@ export default function Home() {
   };
 
   const saleProducts = useMemo(() => {
-    return allProducts.filter(p => p.onSale && !p.isHidden);
+    return allProducts.filter(p => p.onSale && !p.isHidden).slice(0, 12);
   }, [allProducts]);
 
   const filteredAndSortedProducts = useMemo(() => {
@@ -75,9 +84,9 @@ export default function Home() {
         filtered = filtered.filter((p) => p.subcategory === filters.subcategory);
     }
 
-    if (filters.search) {
+    if (deferredSearch) {
       filtered = filtered.filter((p) =>
-        p.name.toLowerCase().includes(filters.search.toLowerCase())
+        p.name.toLowerCase().includes(deferredSearch.toLowerCase())
       );
     }
     
@@ -106,7 +115,7 @@ export default function Home() {
     // Sort each array individually and then concatenate
     return [...sortArray(available), ...sortArray(unavailable)];
 
-  }, [filters, allProducts]);
+  }, [filters.category, filters.subcategory, filters.sort, deferredSearch, allProducts]);
 
   const ProductGridSkeleton = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -140,7 +149,7 @@ export default function Home() {
                 className="w-full"
               >
                 <CarouselContent>
-                  {saleProducts.map((product) => (
+                  {saleProducts.map((product, index) => (
                     <CarouselItem key={product.id} className="md:basis-1/2 lg:basis-1/3">
                       <div className="p-1 h-full">
                         <Link href={`/produtos/${product.id}`} className="block h-full">
@@ -155,7 +164,9 @@ export default function Home() {
                                   alt={product.name}
                                   fill
                                   className="object-contain"
-                                  sizes="50vw"
+                                  sizes="(max-width: 768px) 160px, 192px"
+                                  quality={60}
+                                  priority={index === 0}
                                 />
                               </div>
                               <div className="flex flex-col justify-between flex-grow">
@@ -192,11 +203,24 @@ export default function Home() {
         {isLoading ? (
             <ProductGridSkeleton />
         ) : filteredAndSortedProducts.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {filteredAndSortedProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+              {filteredAndSortedProducts.slice(0, visibleCount).map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </div>
+            {filteredAndSortedProducts.length > visibleCount && (
+              <div className="flex justify-center mt-10">
+                <Button
+                  variant="outline"
+                  disabled={isPending}
+                  onClick={() => setVisibleCount((c) => Math.min(c + INITIAL_VISIBLE_COUNT, filteredAndSortedProducts.length))}
+                >
+                  Carregar mais
+                </Button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="text-center py-16">
             <p className="text-lg text-muted-foreground">Nenhum produto encontrado.</p>

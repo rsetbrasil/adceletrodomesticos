@@ -62,6 +62,19 @@ const formatPhone = (value: string) => {
     return `(${digitsOnly.slice(0, 2)}) ${digitsOnly.slice(2, 7)}-${digitsOnly.slice(7, 11)}`;
 };
 
+const formatCpf = (value: string) => {
+  if (!value) return '';
+  const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
+  if (digitsOnly.length <= 3) return digitsOnly;
+  if (digitsOnly.length <= 6) {
+    return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3)}`;
+  }
+  if (digitsOnly.length <= 9) {
+    return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6)}`;
+  }
+  return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6, 9)}-${digitsOnly.slice(9)}`;
+};
+
 export default function CustomerForm({ onSave, onCancel, customerToEdit }: CustomerFormProps) {
   const { toast } = useToast();
   
@@ -113,14 +126,18 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit }: Custo
   };
   
   async function onSubmit(values: z.infer<typeof customerSchema>) {
-    await onSave(values);
+    const normalizedCpf = values.cpf?.replace(/\D/g, '') ?? '';
+    await onSave({
+      ...values,
+      cpf: normalizedCpf ? normalizedCpf : undefined,
+    });
   }
 
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 py-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF (Opcional)</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl><FormMessage /></FormItem> )} />
+            <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF (Opcional)</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} onChange={(e) => field.onChange(formatCpf(e.target.value))} maxLength={14} /></FormControl><FormMessage /></FormItem> )} />
             <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Nome Completo</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem> )} />
             <FormField control={form.control} name="phone" render={({ field }) => ( <FormItem><FormLabel>Telefone (WhatsApp)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={(e) => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
             <FormField control={form.control} name="phone2" render={({ field }) => ( <FormItem><FormLabel>Telefone 2 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={(e) => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
