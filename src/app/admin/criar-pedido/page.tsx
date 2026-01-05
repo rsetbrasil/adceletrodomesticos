@@ -53,6 +53,11 @@ type CreateOrderFormValues = z.infer<typeof createOrderSchema>;
 
 const formatCurrency = (value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
+const getCustomerKey = (customer: CustomerInfo | null) => {
+  if (!customer) return '';
+  return customer.cpf?.replace(/\D/g, '') || customer.code || `${customer.name}-${customer.phone}`;
+};
+
 const formatBRL = (value: number | undefined | null) => {
   if (value === undefined || value === null || isNaN(value)) {
     return "";
@@ -301,7 +306,7 @@ export default function CreateOrderPage() {
   }, [totalFinanced, installmentsCount, firstDueDate]);
   
   async function onSubmit(values: CreateOrderFormValues) {
-    const customer = activeCustomers.find(c => (c.cpf || `${c.name}-${c.phone}`) === values.customerId);
+    const customer = activeCustomers.find(c => getCustomerKey(c) === values.customerId);
     const seller = users.find(u => u.id === values.sellerId);
     
     if (!customer || !seller) {
@@ -386,7 +391,7 @@ export default function CreateOrderPage() {
                             className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
                           >
                             {field.value
-                              ? (activeCustomers.find(c => (c.cpf || `${c.name}-${c.phone}`) === field.value)?.name || "Cliente indisponível")
+                              ? (activeCustomers.find(c => getCustomerKey(c) === field.value)?.name || "Cliente indisponível")
                               : "Selecione um cliente"}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -395,13 +400,13 @@ export default function CreateOrderPage() {
                       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
                         <Command>
                            <CommandInput 
-                            placeholder="Buscar cliente por nome ou CPF..."
+                            placeholder="Buscar cliente por nome, CPF ou código..."
                           />
                            <CommandList>
                             <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
                             <CommandGroup>
                               {activeCustomers && activeCustomers.map(c => {
-                                const customerId = c.cpf || `${c.name}-${c.phone}`;
+                                const customerId = getCustomerKey(c);
                                 return (
                                 <CommandItem
                                   key={customerId}
@@ -413,7 +418,7 @@ export default function CreateOrderPage() {
                                   <Check className={cn("mr-2 h-4 w-4", customerId === field.value ? "opacity-100" : "opacity-0")} />
                                   <div className="flex flex-col items-start text-left">
                                       <span>{c.name}</span>
-                                      <span className="text-xs text-muted-foreground">{c.cpf || c.phone}</span>
+                                      <span className="text-xs text-muted-foreground">{c.cpf || c.code || c.phone}</span>
                                   </div>
                                 </CommandItem>
                                 )

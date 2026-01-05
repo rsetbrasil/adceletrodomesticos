@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { createContext, useContext, ReactNode, useCallback, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, ReactNode, useCallback, useState, useEffect, useMemo, useRef } from 'react';
 import type { Order, Product, Installment, CustomerInfo, Category, User, CommissionPayment, Payment, StockAudit, Avaria, ChatSession } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { getClientFirebase } from '@/lib/firebase-client';
@@ -40,6 +40,32 @@ const calculateCommission = (order: Order, allProducts: Product[]) => {
           return totalCommission;
       }, 0);
   };
+
+const getCustomerKey = (customer: CustomerInfo) => {
+  const normalizedCpf = customer.cpf?.replace(/\D/g, '');
+  if (normalizedCpf) return normalizedCpf;
+  if (customer.code) return customer.code;
+  return `${customer.name}-${customer.phone}`;
+};
+
+const formatCustomerCode = (value: number) => {
+  return `CLI-${String(value).padStart(5, '0')}`;
+};
+
+const getMaxCustomerCodeNumber = (orders: Order[]) => {
+  let max = 0;
+  orders.forEach(o => {
+    const code = o.customer?.code;
+    if (!code) return;
+    const match = code.match(/^CLI-(\d{5})$/);
+    if (!match) return;
+    const num = Number(match[1]);
+    if (!Number.isNaN(num) && num > max) {
+      max = num;
+    }
+  });
+  return max;
+};
 
 function recalculateInstallments(total: number, installmentsCount: number, orderId: string, firstDueDate: string): Installment[] {
     if (installmentsCount <= 0 || total < 0) return [];
@@ -138,6 +164,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const [stockAudits, setStockAudits] = useState<StockAudit[]>([]);
   const [avarias, setAvarias] = useState<Avaria[]>([]);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
+  const didMigrateCustomerCodesRef = useRef(false);
 
   // Effect for fetching admin-specific data
   useEffect(() => {
@@ -167,13 +194,65 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribes.forEach(unsub => unsub());
   }, []);
 
+  useEffect(() => {
+    if (didMigrateCustomerCodesRef.current) return;
+    if (!user) return;
+    if (orders.length === 0) return;
+
+    didMigrateCustomerCodesRef.current = true;
+
+    const groups = new Map<string, { missingOrderIds: string[]; existingCode?: string }>();
+    orders.forEach(o => {
+      const key = o.customer?.cpf ? o.customer.cpf.replace(/\D/g, '') : `${o.customer.name}-${o.customer.phone}`;
+      if (!key) return;
+      const current = groups.get(key) || { missingOrderIds: [] };
+      if (!current.existingCode && o.customer?.code) {
+        current.existingCode = o.customer.code;
+      }
+      if (!o.customer?.code) {
+        current.missingOrderIds.push(o.id);
+      }
+      groups.set(key, current);
+    });
+
+    const groupsNeedingCode = Array.from(groups.values()).some(g => g.missingOrderIds.length > 0);
+    if (!groupsNeedingCode) return;
+
+    const { db } = getClientFirebase();
+    let nextNumber = getMaxCustomerCodeNumber(orders) + 1;
+
+    const updates: Array<{ orderId: string; code: string }> = [];
+    groups.forEach((group) => {
+      if (group.missingOrderIds.length === 0) return;
+      const code = group.existingCode || formatCustomerCode(nextNumber++);
+      group.missingOrderIds.forEach(orderId => updates.push({ orderId, code }));
+    });
+
+    const chunkSize = 450;
+    const commitChunks = async () => {
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach(({ orderId, code }) => {
+          batch.update(doc(db, 'orders', orderId), { 'customer.code': code });
+        });
+        try {
+          await batch.commit();
+        } catch {
+        }
+      }
+    };
+
+    commitChunks();
+  }, [orders, user]);
+
   // Memos for derived data, now living in AdminContext
   const customers = useMemo(() => {
     const customerMap = new Map<string, CustomerInfo>();
     const sortedOrders = [...orders].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
     sortedOrders.forEach(order => {
-        const customerKey = order.customer.cpf ? order.customer.cpf.replace(/\D/g, '') : `${order.customer.name}-${order.customer.phone}`;
+        const customerKey = getCustomerKey(order.customer);
         if (customerKey && !customerMap.has(customerKey)) {
             customerMap.set(customerKey, order.customer);
         }
@@ -186,7 +265,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const ordersByCustomer: { [key: string]: Order[] } = {};
     orders.forEach(order => {
       if (order.status !== 'Cancelado' && order.status !== 'Excluído') {
-        const customerKey = order.customer.cpf?.replace(/\D/g, '') || `${order.customer.name}-${order.customer.phone}`;
+        const customerKey = getCustomerKey(order.customer);
         if (!ordersByCustomer[customerKey]) {
           ordersByCustomer[customerKey] = [];
         }
@@ -202,7 +281,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const customerFinancials = useMemo(() => {
       const financialsByCustomer: { [key: string]: { totalComprado: number, totalPago: number, saldoDevedor: number } } = {};
       customers.forEach(customer => {
-        const customerKey = customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
+        const customerKey = getCustomerKey(customer);
         const ordersForCustomer = customerOrders[customerKey] || [];
         const allInstallments = ordersForCustomer.flatMap(order => order.installmentDetails || []);
         const totalComprado = ordersForCustomer.reduce((acc, order) => acc + order.total, 0);
@@ -752,9 +831,43 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       
     const orderId = `${prefix}-${String(lastOrderWithPrefix + 1).padStart(4, '0')}`;
 
+    const customerToSave = order.customer ? { ...order.customer } : undefined;
+    if (customerToSave && !customerToSave.code) {
+      const key = customerToSave.cpf ? customerToSave.cpf.replace(/\D/g, '') : `${customerToSave.name}-${customerToSave.phone}`;
+
+      const existingOrderWithCode = allOrders.find(o => {
+        const oKey = o.customer?.cpf ? o.customer.cpf.replace(/\D/g, '') : `${o.customer.name}-${o.customer.phone}`;
+        return oKey === key && !!o.customer?.code;
+      });
+      customerToSave.code = existingOrderWithCode?.customer?.code;
+
+      if (!customerToSave.code) {
+        customerToSave.code = formatCustomerCode(getMaxCustomerCodeNumber(allOrders) + 1);
+      }
+
+      const orderIdsToBackfill = allOrders
+        .filter(o => {
+          const oKey = o.customer?.cpf ? o.customer.cpf.replace(/\D/g, '') : `${o.customer.name}-${o.customer.phone}`;
+          return oKey === key && !o.customer?.code;
+        })
+        .map(o => o.id);
+
+      if (orderIdsToBackfill.length > 0) {
+        const batch = writeBatch(db);
+        orderIdsToBackfill.forEach(orderId => {
+          batch.update(doc(db, 'orders', orderId), { 'customer.code': customerToSave.code });
+        });
+        try {
+          await batch.commit();
+        } catch {
+        }
+      }
+    }
+
     const orderToSave = {
         ...order,
         id: orderId,
+        customer: customerToSave || order.customer,
         sellerId: order.sellerId || user?.id || '',
         sellerName: order.sellerName || user?.name || 'Não atribuído',
         commissionPaid: false,
@@ -1003,10 +1116,10 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const updateCustomer = useCallback(async (oldCustomer: CustomerInfo, updatedCustomerData: CustomerInfo, logAction: LogAction, user: User | null) => {
     const { db } = getClientFirebase();
     const batch = writeBatch(db);
-    const oldCustomerKey = oldCustomer.cpf?.replace(/\D/g, '') || `${oldCustomer.name}-${oldCustomer.phone}`;
+    const oldCustomerKey = getCustomerKey(oldCustomer);
 
     orders.forEach(order => {
-        const orderCustomerKey = order.customer.cpf?.replace(/\D/g, '') || `${order.customer.name}-${order.customer.phone}`;
+        const orderCustomerKey = getCustomerKey(order.customer);
         if (orderCustomerKey === oldCustomerKey) {
             const customerData = { ...order.customer, ...updatedCustomerData };
             if (updatedCustomerData.password === undefined || updatedCustomerData.password === '') {
@@ -1033,10 +1146,10 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     const { db } = getClientFirebase();
-    const customerKey = customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
+    const customerKey = getCustomerKey(customer);
 
     const ordersToTrash = orders.filter(order => {
-        const orderCustomerKey = order.customer.cpf?.replace(/\D/g, '') || `${order.customer.name}-${order.customer.phone}`;
+        const orderCustomerKey = getCustomerKey(order.customer);
         return orderCustomerKey === customerKey;
     });
 
@@ -1078,10 +1191,10 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
     const { db } = getClientFirebase();
-    const customerKey = customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
+    const customerKey = getCustomerKey(customer);
 
     const ordersToRestore = orders.filter(order => {
-        const orderCustomerKey = order.customer.cpf?.replace(/\D/g, '') || `${order.customer.name}-${order.customer.phone}`;
+        const orderCustomerKey = getCustomerKey(order.customer);
         return orderCustomerKey === customerKey;
     });
 

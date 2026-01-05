@@ -584,7 +584,16 @@ Não esqueça de enviar o comprovante!`;
                                                   <TableCell className="p-2 whitespace-nowrap">{format(new Date(order.date), "dd/MM/yy HH:mm")}</TableCell>
                                                   <TableCell className="p-2">
                                                     <div className="flex items-center gap-2">
-                                                      <Link href={`/admin/clientes?cpf=${order.customer.cpf}`} passHref>
+                                                      <Link
+                                                        href={
+                                                          order.customer.cpf
+                                                            ? `/admin/clientes?cpf=${order.customer.cpf.replace(/\D/g, '')}`
+                                                            : order.customer.code
+                                                              ? `/admin/clientes?code=${encodeURIComponent(order.customer.code)}`
+                                                              : '/admin/clientes'
+                                                        }
+                                                        passHref
+                                                      >
                                                           <Button variant="ghost" size="icon" className="h-7 w-7">
                                                               <UserIcon className="h-4 w-4" />
                                                               <span className="sr-only">Ver Cliente</span>
@@ -862,7 +871,16 @@ Não esqueça de enviar o comprovante!`;
                                 <p><strong>CPF:</strong> {selectedOrder.customer.cpf}</p>
                                 <p><strong>Telefone:</strong> {selectedOrder.customer.phone}</p>
                                 <p><strong>Endereço:</strong> {`${selectedOrder.customer.address}, ${selectedOrder.customer.city}`}</p>
-                                <Link href={`/admin/clientes?cpf=${selectedOrder.customer.cpf}`} className={cn(buttonVariants({ variant: 'outline', size: 'sm'}), 'mt-2')}>
+                                <Link
+                                  href={
+                                    selectedOrder.customer.cpf
+                                      ? `/admin/clientes?cpf=${selectedOrder.customer.cpf.replace(/\D/g, '')}`
+                                      : selectedOrder.customer.code
+                                        ? `/admin/clientes?code=${encodeURIComponent(selectedOrder.customer.code)}`
+                                        : '/admin/clientes'
+                                  }
+                                  className={cn(buttonVariants({ variant: 'outline', size: 'sm'}), 'mt-2')}
+                                >
                                   <Eye className='mr-2' /> Ver Cadastro Completo
                                </Link>
                             </CardContent>

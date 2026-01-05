@@ -40,7 +40,7 @@ const formatCurrency = (value: number) => {
 
 const getCustomerKey = (customer: CustomerInfo | null) => {
   if (!customer) return '';
-  return customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
+  return customer.cpf?.replace(/\D/g, '') || customer.code || `${customer.name}-${customer.phone}`;
 }
 
 const formatPhone = (value: string) => {
@@ -53,6 +53,15 @@ const formatPhone = (value: string) => {
       return `(${digitsOnly.slice(0, 2)}) ${digitsOnly.slice(2)}`;
     }
     return `(${digitsOnly.slice(0, 2)}) ${digitsOnly.slice(2, 7)}-${digitsOnly.slice(7, 11)}`;
+};
+
+const formatCpf = (value: string) => {
+    if (!value) return '';
+    const digitsOnly = value.replace(/\D/g, '').slice(0, 11);
+    if (digitsOnly.length <= 3) return digitsOnly;
+    if (digitsOnly.length <= 6) return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3)}`;
+    if (digitsOnly.length <= 9) return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6)}`;
+    return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6, 9)}-${digitsOnly.slice(9)}`;
 };
 
 
@@ -135,12 +144,20 @@ export default function CustomersAdminPage() {
   // Effect to handle selecting a customer from URL query parameter
   useEffect(() => {
     const cpfFromQuery = searchParams.get('cpf');
-    if (cpfFromQuery && customers.length > 0) {
-      const customerToSelect = customers.find(c => c.cpf && c.cpf.replace(/\D/g, '') === cpfFromQuery.replace(/\D/g, ''));
+    const codeFromQuery = searchParams.get('code');
+    if (customers.length > 0) {
+      const normalizedCpfFromQuery = cpfFromQuery?.replace(/\D/g, '');
+      const normalizedCodeFromQuery = codeFromQuery?.trim().toLowerCase();
+
+      const customerToSelect = normalizedCpfFromQuery
+        ? customers.find(c => c.cpf && c.cpf.replace(/\D/g, '') === normalizedCpfFromQuery)
+        : normalizedCodeFromQuery
+          ? customers.find(c => c.code && c.code.toLowerCase() === normalizedCodeFromQuery)
+          : undefined;
+
       if (customerToSelect) {
         setSelectedCustomer(customerToSelect);
         setActiveTab(customerToSelect.isDeleted ? 'deleted' : 'active');
-        // Optional: clear the query param after selection
         router.replace('/admin/clientes', undefined);
       }
     }
@@ -169,7 +186,8 @@ export default function CustomersAdminPage() {
     const lowercasedQuery = searchQuery.toLowerCase();
     return tabCustomers.filter(customer =>
         customer.name.toLowerCase().includes(lowercasedQuery) ||
-        (customer.cpf && customer.cpf.replace(/\D/g, '').includes(lowercasedQuery))
+        (customer.cpf && customer.cpf.replace(/\D/g, '').includes(lowercasedQuery)) ||
+        (customer.code && customer.code.toLowerCase().includes(lowercasedQuery))
     );
   }, [customers, searchQuery, activeTab]);
   
@@ -364,6 +382,8 @@ export default function CustomersAdminPage() {
     const { name, value } = e.target;
     if (name.startsWith('phone')) {
         setEditedInfo(prev => ({ ...prev, [name]: formatPhone(value) }));
+    } else if (name === 'cpf') {
+        setEditedInfo(prev => ({ ...prev, cpf: value.replace(/\D/g, '').slice(0, 11) }));
     } else {
         setEditedInfo(prev => ({ ...prev, [name]: value }));
     }
@@ -529,7 +549,7 @@ Não esqueça de enviar o comprovante!`;
             <div className="relative mb-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input 
-                    placeholder="Buscar por nome ou CPF..."
+                    placeholder="Buscar por nome, CPF ou código..."
                     className="pl-10"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -555,7 +575,7 @@ Não esqueça de enviar o comprovante!`;
                         </div>
                         <div>
                             <p className="font-semibold">{customer.name}</p>
-                            <p className="text-xs text-muted-foreground">{customer.cpf}</p>
+                            <p className="text-xs text-muted-foreground">{customer.cpf || customer.code || customer.phone}</p>
                         </div>
                     </div>
                     </Button>
@@ -669,6 +689,13 @@ Não esqueça de enviar o comprovante!`;
                             <strong className="text-muted-foreground font-mono text-xs">CPF</strong>
                             <span>{selectedCustomer.cpf || 'Não informado'}</span>
                         </div>
+                        {selectedCustomer.code && (
+                            <div className="flex items-center gap-2">
+                                <KeyRound className="h-4 w-4 text-muted-foreground" />
+                                <strong className="text-muted-foreground font-mono text-xs">Código</strong>
+                                <span>{selectedCustomer.code}</span>
+                            </div>
+                        )}
                         <div className="flex items-start col-span-full gap-2 mt-2">
                             <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                             <div>
@@ -1027,7 +1054,15 @@ Não esqueça de enviar o comprovante!`;
                         </div>
                         <div>
                             <Label htmlFor="cpf">CPF</Label>
-                            <Input id="cpf" name="cpf" value={editedInfo.cpf || ''} onChange={handleInputChange} />
+                            <Input
+                              id="cpf"
+                              name="cpf"
+                              inputMode="numeric"
+                              placeholder="000.000.000-00"
+                              value={formatCpf(editedInfo.cpf || '')}
+                              onChange={handleInputChange}
+                              maxLength={14}
+                            />
                         </div>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
