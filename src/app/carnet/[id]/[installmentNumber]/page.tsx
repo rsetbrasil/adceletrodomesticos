@@ -9,20 +9,15 @@ import { Button } from '@/components/ui/button';
 import { Printer, Send, ArrowLeft } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { useToast } from '@/hooks/use-toast';
 import Logo from '@/components/Logo';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
+import { useSettings } from '@/context/SettingsContext';
 
 const formatCurrency = (value: number) => {
   if (typeof value !== 'number' || isNaN(value)) return 'R$ 0,00';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
-
-const initialSettings: StoreSettings = {
-    storeName: 'ADC Móveis', storeCity: '', storeAddress: '', pixKey: '', storePhone: ''
 };
 
 const ReceiptContent = ({ order, installment, settings, via }: { order: Order; installment: Installment; settings: StoreSettings; via: 'Empresa' | 'Cliente' }) => {
@@ -147,40 +142,35 @@ const ReceiptContent = ({ order, installment, settings, via }: { order: Order; i
 export default function SingleInstallmentPage() {
   const params = useParams();
   const router = useRouter();
-  const [settings, setSettings] = useState<StoreSettings>(initialSettings);
+  const { settings, isLoading: isSettingsLoading } = useSettings();
   const [order, setOrder] = useState<Order | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isOrderLoading, setIsOrderLoading] = useState(true);
   const receiptRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
    useEffect(() => {
     const orderId = params.id as string;
     if (!orderId) {
-      setIsLoading(false);
+      setIsOrderLoading(false);
       return;
     }
     
     const { db } = getClientFirebase();
     const orderRef = doc(db, 'orders', orderId);
-    const settingsRef = doc(db, 'config', 'storeSettings');
     
-    Promise.all([getDoc(orderRef), getDoc(settingsRef)])
-      .then(([orderDoc, settingsDoc]) => {
+    getDoc(orderRef)
+      .then((orderDoc) => {
         if (orderDoc.exists()) {
           setOrder({ id: orderDoc.id, ...orderDoc.data() } as Order);
         } else {
           console.error("No such order!");
-        }
-
-        if (settingsDoc.exists()) {
-            setSettings(settingsDoc.data() as StoreSettings);
         }
       })
       .catch(error => {
         console.error("Error fetching document:", error);
       })
       .finally(() => {
-        setIsLoading(false);
+        setIsOrderLoading(false);
       });
 
   }, [params.id]);
@@ -201,12 +191,17 @@ export default function SingleInstallmentPage() {
   const handleGeneratePdfAndSend = async () => {
     const input = receiptRef.current;
     if (!input || !order || !installment) return;
+
+    const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+      import('html2canvas'),
+      import('jspdf'),
+    ]);
     
     // Temporarily apply a class to the body for print-specific styles
     document.body.classList.add('print-receipt');
     
     const canvas = await html2canvas(input, {
-        scale: 2.5, 
+        scale: 1.5, 
         useCORS: true,
         backgroundColor: '#ffffff'
     });
@@ -256,7 +251,7 @@ export default function SingleInstallmentPage() {
     });
   };
 
-  if (isLoading) {
+  if (isOrderLoading || isSettingsLoading) {
     return <div className="p-8 text-center">Carregando parcela...</div>;
   }
 

@@ -26,6 +26,24 @@ const DefaultLogo = () => (
     </div>
 );
 
+export function StaticLogo({ logoUrl, storeName }: { logoUrl?: string; storeName?: string }) {
+    if (logoUrl) {
+        return (
+            <div className="relative w-32 h-14">
+                <Image 
+                    src={logoUrl} 
+                    alt={storeName || 'Logo'} 
+                    fill
+                    className="object-contain" 
+                    sizes="130px"
+                />
+            </div>
+        );
+    }
+
+    return <DefaultLogo />;
+}
+
 const Logo = () => {
     const { settings, isLoading } = useSettings();
 
@@ -34,21 +52,7 @@ const Logo = () => {
         return <DefaultLogo />;
     }
 
-    if (settings.logoUrl) {
-        return (
-            <div className="relative w-32 h-14">
-                <Image 
-                    src={settings.logoUrl} 
-                    alt={settings.storeName} 
-                    fill
-                    className="object-contain" 
-                    sizes="130px"
-                />
-            </div>
-        );
-    }
-  
-    return <DefaultLogo />;
+    return <StaticLogo logoUrl={settings.logoUrl} storeName={settings.storeName} />;
 };
 
 export default Logo;

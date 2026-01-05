@@ -1,40 +1,62 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
-import { Button } from './ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { Copy, QrCode } from 'lucide-react';
+import { QrCode } from 'lucide-react';
 import { Skeleton } from './ui/skeleton';
 
 interface PixQRCodeProps {
   payload: string;
 }
 
+const qrCodeUrlCache = new Map<string, string>();
+const qrCodePromiseCache = new Map<string, Promise<string>>();
+
 export default function PixQRCode({ payload }: PixQRCodeProps) {
-  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
-  const { toast } = useToast();
+  const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(() => {
+    if (!payload) return null;
+    return qrCodeUrlCache.get(payload) ?? null;
+  });
 
   useEffect(() => {
-    if (payload) {
-      QRCode.toDataURL(payload, { width: 256, margin: 1 })
-        .then(url => {
-          setQrCodeUrl(url);
-        })
-        .catch(err => {
-          console.error('Failed to generate QR Code', err);
-        });
+    let cancelled = false;
+    if (!payload) {
+      setQrCodeUrl(null);
+      return;
     }
-  }, [payload]);
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(payload).then(() => {
-      toast({
-        title: 'Copiado!',
-        description: 'O código PIX foi copiado para a área de transferência.',
+    const cachedUrl = qrCodeUrlCache.get(payload);
+    if (cachedUrl) {
+      setQrCodeUrl(cachedUrl);
+      return;
+    }
+
+    const existingPromise = qrCodePromiseCache.get(payload);
+    const promise =
+      existingPromise ??
+      (async () => {
+        const qrcode = await import('qrcode');
+        return qrcode.toDataURL(payload, { width: 256, margin: 1 });
+      })();
+
+    if (!existingPromise) {
+      qrCodePromiseCache.set(payload, promise);
+    }
+
+    promise
+      .then((url) => {
+        qrCodeUrlCache.set(payload, url);
+        qrCodePromiseCache.delete(payload);
+        if (!cancelled) setQrCodeUrl(url);
+      })
+      .catch((err) => {
+        qrCodePromiseCache.delete(payload);
+        console.error('Failed to generate QR Code', err);
       });
-    });
-  };
+
+    return () => {
+      cancelled = true;
+    };
+  }, [payload]);
 
   if (!payload) return null;
 

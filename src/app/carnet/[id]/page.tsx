@@ -15,15 +15,12 @@ import PixQRCode from '@/components/PixQRCode';
 import { cn } from '@/lib/utils';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
+import { useSettings } from '@/context/SettingsContext';
 
 
 const formatCurrency = (value: number) => {
   if (typeof value !== 'number') return 'R$ 0,00';
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
-};
-
-const initialSettings: StoreSettings = {
-    storeName: 'ADC Móveis', storeCity: '', storeAddress: '', pixKey: '', storePhone: ''
 };
 
 const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings: StoreSettings, pixPayload: string | null }) => {
@@ -170,38 +167,33 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
 
 export default function CarnetPage() {
   const params = useParams();
+  const { settings, isLoading: isSettingsLoading } = useSettings();
   const [order, setOrder] = useState<Order | null>(null);
-  const [settings, setSettings] = useState<StoreSettings>(initialSettings);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isOrderLoading, setIsOrderLoading] = useState(true);
 
   useEffect(() => {
     const orderId = params.id as string;
     if (!orderId) {
-      setIsLoading(false);
+      setIsOrderLoading(false);
       return;
     }
     
     const { db } = getClientFirebase();
     const orderRef = doc(db, 'orders', orderId);
-    const settingsRef = doc(db, 'config', 'storeSettings');
     
-    Promise.all([getDoc(orderRef), getDoc(settingsRef)])
-      .then(([orderDoc, settingsDoc]) => {
+    getDoc(orderRef)
+      .then((orderDoc) => {
         if (orderDoc.exists()) {
           setOrder({ id: orderDoc.id, ...orderDoc.data() } as Order);
         } else {
           console.error("No such order!");
-        }
-
-        if (settingsDoc.exists()) {
-            setSettings(settingsDoc.data() as StoreSettings);
         }
       })
       .catch(error => {
         console.error("Error fetching document:", error);
       })
       .finally(() => {
-        setIsLoading(false);
+        setIsOrderLoading(false);
       });
 
   }, [params.id]);
@@ -237,7 +229,7 @@ export default function CarnetPage() {
   };
 
 
-  if (isLoading) {
+  if (isOrderLoading || isSettingsLoading) {
     return <div className="p-8 text-center">Carregando carnê...</div>;
   }
 
