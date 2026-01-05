@@ -868,6 +868,7 @@ Não esqueça de enviar o comprovante!`;
                             </CardHeader>
                             <CardContent className="text-sm space-y-1">
                                 <p><strong>Nome:</strong> {selectedOrder.customer.name}</p>
+                                {selectedOrder.customer.code && <p><strong>Código:</strong> {selectedOrder.customer.code}</p>}
                                 <p><strong>CPF:</strong> {selectedOrder.customer.cpf}</p>
                                 <p><strong>Telefone:</strong> {selectedOrder.customer.phone}</p>
                                 <p><strong>Endereço:</strong> {`${selectedOrder.customer.address}, ${selectedOrder.customer.city}`}</p>
