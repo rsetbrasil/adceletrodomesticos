@@ -21,29 +21,40 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const { db } = getClientFirebase();
-    if (!db) {
+    const timeoutId = window.setTimeout(() => {
+      setAuditLogs([]);
+      setIsLoading(false);
+    }, 8000);
+    try {
+      const { db } = getClientFirebase();
+      const logsCollection = collection(db, 'auditLogs');
+      const q = query(logsCollection, orderBy('timestamp', 'desc'));
+
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          window.clearTimeout(timeoutId);
+          const fetchedLogs = querySnapshot.docs.map(d => ({ ...d.data(), id: d.id })) as AuditLog[];
+          setAuditLogs(fetchedLogs);
+          setIsLoading(false);
+      }, (error) => {
+          window.clearTimeout(timeoutId);
+          console.error("Error fetching audit logs from Firestore:", error);
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+              path: 'auditLogs',
+              operation: 'list',
+          }));
+          setIsLoading(false);
+      });
+
+      return () => {
+        window.clearTimeout(timeoutId);
+        unsubscribe();
+      };
+    } catch (error) {
+      window.clearTimeout(timeoutId);
       setAuditLogs([]);
       setIsLoading(false);
       return;
     }
-    const logsCollection = collection(db, 'auditLogs');
-    const q = query(logsCollection, orderBy('timestamp', 'desc'));
-
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const fetchedLogs = querySnapshot.docs.map(d => ({ ...d.data(), id: d.id })) as AuditLog[];
-        setAuditLogs(fetchedLogs);
-        setIsLoading(false);
-    }, (error) => {
-        console.error("Error fetching audit logs from Firestore:", error);
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: 'auditLogs',
-            operation: 'list',
-        }));
-        setIsLoading(false);
-    });
-
-    return () => unsubscribe();
   }, []);
 
 

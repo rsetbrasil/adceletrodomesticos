@@ -164,6 +164,10 @@ export default function CreateOrderPage() {
   
   const [openCustomerPopover, setOpenCustomerPopover] = useState(false);
   
+  const activeCustomers = useMemo(() => {
+    return allCustomers.filter(c => !c.isDeleted);
+  }, [allCustomers]);
+
 
   const sellers = useMemo(() => {
     return users.filter(u => u.role === 'vendedor' || u.role === 'admin' || u.role === 'gerente');
@@ -297,7 +301,7 @@ export default function CreateOrderPage() {
   }, [totalFinanced, installmentsCount, firstDueDate]);
   
   async function onSubmit(values: CreateOrderFormValues) {
-    const customer = allCustomers.find(c => (c.cpf || `${c.name}-${c.phone}`) === values.customerId);
+    const customer = activeCustomers.find(c => (c.cpf || `${c.name}-${c.phone}`) === values.customerId);
     const seller = users.find(u => u.id === values.sellerId);
     
     if (!customer || !seller) {
@@ -382,7 +386,7 @@ export default function CreateOrderPage() {
                             className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
                           >
                             {field.value
-                              ? allCustomers.find(c => (c.cpf || `${c.name}-${c.phone}`) === field.value)?.name
+                              ? (activeCustomers.find(c => (c.cpf || `${c.name}-${c.phone}`) === field.value)?.name || "Cliente indisponível")
                               : "Selecione um cliente"}
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
@@ -396,7 +400,7 @@ export default function CreateOrderPage() {
                            <CommandList>
                             <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
                             <CommandGroup>
-                              {allCustomers && allCustomers.map(c => {
+                              {activeCustomers && activeCustomers.map(c => {
                                 const customerId = c.cpf || `${c.name}-${c.phone}`;
                                 return (
                                 <CommandItem

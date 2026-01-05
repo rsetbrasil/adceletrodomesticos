@@ -43,32 +43,43 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
 
     useEffect(() => {
-        const { db } = getClientFirebase();
-        if (!db) {
+        let unsubscribe: (() => void) | null = null;
+        const timeoutId = window.setTimeout(() => {
             setSettings(initialSettings);
             setIsLoading(false);
-            return;
-        }
-        const settingsRef = doc(db, 'config', 'storeSettings');
-        const unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
-            if (docSnap.exists()) {
-                setSettings(docSnap.data() as StoreSettings);
-            } else {
-                await setDoc(settingsRef, initialSettings);
+        }, 8000);
+        try {
+            const { db } = getClientFirebase();
+            const settingsRef = doc(db, 'config', 'storeSettings');
+            unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
+                window.clearTimeout(timeoutId);
+                if (docSnap.exists()) {
+                    setSettings(docSnap.data() as StoreSettings);
+                } else {
+                    await setDoc(settingsRef, initialSettings);
+                    setSettings(initialSettings);
+                }
+                setIsLoading(false);
+            }, (error) => {
+                window.clearTimeout(timeoutId);
+                console.error("Failed to load settings from Firestore:", error);
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: 'config/storeSettings',
+                    operation: 'get',
+                }));
                 setSettings(initialSettings);
-            }
-            setIsLoading(false);
-        }, (error) => {
-            console.error("Failed to load settings from Firestore:", error);
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: 'config/storeSettings',
-                operation: 'get',
-            }));
+                setIsLoading(false);
+            });
+        } catch (error) {
+            window.clearTimeout(timeoutId);
             setSettings(initialSettings);
             setIsLoading(false);
-        });
+        }
 
-        return () => unsubscribe();
+        return () => {
+            window.clearTimeout(timeoutId);
+            unsubscribe?.();
+        };
     }, [toast]);
 
     const updateSettings = async (newSettings: Partial<StoreSettings>) => {

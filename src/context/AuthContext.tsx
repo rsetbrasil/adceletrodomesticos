@@ -39,25 +39,32 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   
   useEffect(() => {
     setIsLoading(true);
-    const { db } = getClientFirebase();
-    const usersUnsubscribe = db
-      ? onSnapshot(
-          collection(db, 'users'),
-          (snapshot) => {
-            setUsers(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as User)));
-          },
-          (error) => {
-            console.error("Error fetching users:", error);
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-              path: 'users',
-              operation: 'list',
-            }));
-          }
-        )
-      : (() => {
+    let usersUnsubscribe: (() => void) | null = null;
+    const usersTimeoutId = window.setTimeout(() => {
+      setUsers(initialUsers);
+    }, 8000);
+    try {
+      const { db } = getClientFirebase();
+      usersUnsubscribe = onSnapshot(
+        collection(db, 'users'),
+        (snapshot) => {
+          window.clearTimeout(usersTimeoutId);
+          setUsers(snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as User)));
+        },
+        (error) => {
+          window.clearTimeout(usersTimeoutId);
+          console.error("Error fetching users:", error);
+          errorEmitter.emit('permission-error', new FirestorePermissionError({
+            path: 'users',
+            operation: 'list',
+          }));
           setUsers(initialUsers);
-          return () => {};
-        })();
+        }
+      );
+    } catch (error) {
+      window.clearTimeout(usersTimeoutId);
+      setUsers(initialUsers);
+    }
     
     try {
         const storedUser = localStorage.getItem('user');
@@ -71,7 +78,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsLoading(false);
     }
     
-    return () => usersUnsubscribe();
+    return () => {
+      window.clearTimeout(usersTimeoutId);
+      usersUnsubscribe?.();
+    };
   }, []);
 
   const login = (username: string, pass: string) => {

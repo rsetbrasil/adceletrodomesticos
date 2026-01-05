@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
 import { cn } from '@/lib/utils';
@@ -99,7 +100,7 @@ const resizeImage = (file: File, MAX_WIDTH = 1920, MAX_HEIGHT = 1080): Promise<s
 };
 
 export default function CustomersAdminPage() {
-  const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addOrder, deleteCustomer } = useAdmin();
+  const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addOrder, deleteCustomer, restoreCustomer } = useAdmin();
   const { customers, customerOrders, customerFinancials } = useAdminData();
   const { user } = useAuth();
   const { settings } = useSettings();
@@ -109,6 +110,7 @@ export default function CustomersAdminPage() {
   const router = useRouter();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState<'active' | 'deleted'>('active');
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerInfo | null>(null);
   const [imageToView, setImageToView] = useState<string | null>(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -137,6 +139,7 @@ export default function CustomersAdminPage() {
       const customerToSelect = customers.find(c => c.cpf && c.cpf.replace(/\D/g, '') === cpfFromQuery.replace(/\D/g, ''));
       if (customerToSelect) {
         setSelectedCustomer(customerToSelect);
+        setActiveTab(customerToSelect.isDeleted ? 'deleted' : 'active');
         // Optional: clear the query param after selection
         router.replace('/admin/clientes', undefined);
       }
@@ -160,14 +163,15 @@ export default function CustomersAdminPage() {
 
   const filteredCustomers = useMemo(() => {
     if (!customers) return [];
-    if (!searchQuery) return customers;
+    const tabCustomers = activeTab === 'deleted' ? customers.filter(c => c.isDeleted) : customers.filter(c => !c.isDeleted);
+    if (!searchQuery) return tabCustomers;
 
     const lowercasedQuery = searchQuery.toLowerCase();
-    return customers.filter(customer =>
+    return tabCustomers.filter(customer =>
         customer.name.toLowerCase().includes(lowercasedQuery) ||
         (customer.cpf && customer.cpf.replace(/\D/g, '').includes(lowercasedQuery))
     );
-  }, [customers, searchQuery]);
+  }, [customers, searchQuery, activeTab]);
   
   const ordersForSelectedCustomer = useMemo(() => {
       if (!selectedCustomer) return [];
@@ -181,6 +185,8 @@ export default function CustomersAdminPage() {
       return customerFinancials[customerKey] || { totalComprado: 0, totalPago: 0, saldoDevedor: 0 };
   }, [selectedCustomer, customerFinancials]);
 
+  const canDeleteCustomer = user?.role === 'admin' || user?.role === 'gerente';
+  
   
   const handleOpenPaymentDialog = (order: Order, installment: Installment) => {
     setOrderForPayment(order);
@@ -464,6 +470,15 @@ Não esqueça de enviar o comprovante!`;
     
     deleteCustomer(selectedCustomer, logAction, user);
     setSelectedCustomer(null);
+    setActiveTab('deleted');
+  };
+  
+  const handleRestoreCustomer = () => {
+    if (!selectedCustomer || !user) return;
+
+    restoreCustomer(selectedCustomer, logAction, user);
+    setSelectedCustomer(null);
+    setActiveTab('active');
   };
 
   return (
@@ -476,16 +491,18 @@ Não esqueça de enviar o comprovante!`;
                         <Users className="h-5 w-5" />
                         Clientes
                     </CardTitle>
-                    <div className="flex gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setIsAddCustomerDialogOpen(true)}>
-                            <UserPlus className="h-4 w-4 mr-2" />
-                            Cadastrar
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
-                            <Import className="h-4 w-4 mr-2" />
-                            Importar
-                        </Button>
-                    </div>
+                    {activeTab === 'active' && (
+                        <div className="flex gap-2">
+                            <Button variant="outline" size="sm" onClick={() => setIsAddCustomerDialogOpen(true)}>
+                                <UserPlus className="h-4 w-4 mr-2" />
+                                Cadastrar
+                            </Button>
+                            <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+                                <Import className="h-4 w-4 mr-2" />
+                                Importar
+                            </Button>
+                        </div>
+                    )}
                     <input
                         type="file"
                         ref={fileInputRef}
@@ -497,6 +514,18 @@ Não esqueça de enviar o comprovante!`;
                 <CardDescription>Selecione um cliente para ver os detalhes, cadastre um novo ou importe uma lista.</CardDescription>
             </CardHeader>
             <CardContent>
+            <Tabs
+                value={activeTab}
+                onValueChange={(value) => {
+                    setActiveTab(value as 'active' | 'deleted');
+                    setSelectedCustomer(null);
+                }}
+            >
+                <TabsList className="mb-4 w-full">
+                    <TabsTrigger value="active" className="flex-1">Ativos</TabsTrigger>
+                    <TabsTrigger value="deleted" className="flex-1">Lixeira</TabsTrigger>
+                </TabsList>
+            </Tabs>
             <div className="relative mb-4">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input 
@@ -561,28 +590,54 @@ Não esqueça de enviar o comprovante!`;
                                 <Pencil className="mr-2 h-4 w-4" />
                                 Editar
                             </Button>
-                             <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" outline size="sm">
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Excluir Cliente
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Tem certeza que deseja excluir este cliente?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            Esta ação é irreversível e excluirá permanentemente o cliente <span className="font-bold">{selectedCustomer.name}</span> e todos os seus pedidos e histórico financeiro.
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleDeleteCustomer}>
-                                            Sim, Excluir Tudo
-                                        </AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
+                            {canDeleteCustomer && !selectedCustomer.isDeleted && (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="destructive" outline size="sm">
+                                            <Trash2 className="mr-2 h-4 w-4" />
+                                            Excluir Cliente
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Mover cliente para a lixeira?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Isso irá mover o cliente <span className="font-bold">{selectedCustomer.name}</span> e todos os seus pedidos para a lixeira.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleDeleteCustomer}>
+                                                Sim, mover para a lixeira
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            )}
+                            {canDeleteCustomer && selectedCustomer.isDeleted && (
+                                <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                        <Button variant="outline" size="sm">
+                                            <Undo2 className="mr-2 h-4 w-4" />
+                                            Restaurar Cliente
+                                        </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Restaurar cliente da lixeira?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                Isso irá restaurar o cliente <span className="font-bold">{selectedCustomer.name}</span> e seus pedidos.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                            <AlertDialogAction onClick={handleRestoreCustomer}>
+                                                Sim, restaurar
+                                            </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
+                            )}
                         </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 text-sm">

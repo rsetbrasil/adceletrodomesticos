@@ -30,6 +30,9 @@ import { useAuth } from '@/context/AuthContext';
 import { useAudit } from '@/context/AuditContext';
 import { useData } from '@/context/DataContext';
 import { Textarea } from './ui/textarea';
+import { ToastAction } from '@/components/ui/toast';
+import { getClientFirebase } from '@/lib/firebase-client';
+import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 
 function isValidCPF(cpf: string) {
     if (typeof cpf !== 'string') return false;
@@ -89,6 +92,7 @@ export default function CheckoutForm() {
   const router = useRouter();
   const { toast } = useToast();
   const [isNewCustomer, setIsNewCustomer] = useState(true);
+  const [blockedCpf, setBlockedCpf] = useState<string | null>(null);
   
   const form = useForm<z.infer<typeof checkoutSchema>>({
     resolver: zodResolver(checkoutSchema),
@@ -186,7 +190,105 @@ export default function CheckoutForm() {
       return null;
   }
 
+  const openSupportWhatsApp = (cpf: string) => {
+    if (!settings.storePhone) {
+      return;
+    }
+
+    const storePhone = settings.storePhone.replace(/\D/g, '');
+    if (!storePhone) return;
+
+    const message = [
+      'Olá! Preciso de suporte para finalizar uma compra.',
+      `Meu CPF: ${cpf}`,
+      'Apareceu que meu cadastro está bloqueado.',
+    ].join('\n');
+
+    const encodedMessage = encodeURIComponent(message);
+    const webUrl = `https://wa.me/55${storePhone}?text=${encodedMessage}`;
+    window.open(webUrl, '_blank');
+  };
+
+  const showBlockedCpfToast = (cpf: string) => {
+    toast({
+      title: 'CPF bloqueado',
+      description: 'Seu cadastro está na lixeira. Fale com o suporte pelo WhatsApp para liberar.',
+      variant: 'destructive',
+      action: settings.storePhone ? (
+        <ToastAction altText="Falar com suporte no WhatsApp" onClick={() => openSupportWhatsApp(cpf)}>
+          Falar no WhatsApp
+        </ToastAction>
+      ) : undefined,
+    });
+  };
+
+  const checkCpfIsBlocked = async (cpfRaw: string): Promise<boolean> => {
+    const normalizedCpf = cpfRaw.replace(/\D/g, '');
+    if (!normalizedCpf || normalizedCpf.length !== 11) {
+      setBlockedCpf(null);
+      return false;
+    }
+    if (!isValidCPF(normalizedCpf)) {
+      setBlockedCpf(null);
+      return false;
+    }
+
+    let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
+    try {
+      ({ db } = getClientFirebase());
+    } catch {
+      setBlockedCpf(null);
+      return false;
+    }
+    if (!db) {
+      setBlockedCpf(null);
+      return false;
+    }
+
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('customer.cpf', '==', normalizedCpf), limit(25));
+    const snapshot = await getDocs(q);
+    const isBlocked = snapshot.docs.some(d => {
+      const data = d.data() as Order;
+      return !!data.customer?.isDeleted;
+    });
+
+    setBlockedCpf(isBlocked ? normalizedCpf : null);
+    return isBlocked;
+  };
+
+  const handleCpfBlurCheck = async (cpfRaw: string) => {
+    try {
+      const normalizedCpf = cpfRaw.replace(/\D/g, '');
+      if (blockedCpf && normalizedCpf === blockedCpf) {
+        showBlockedCpfToast(blockedCpf);
+        form.setError('cpf', { type: 'manual', message: 'CPF bloqueado. Fale com o suporte.' });
+        return;
+      }
+
+      const isBlocked = await checkCpfIsBlocked(cpfRaw);
+      if (isBlocked) {
+        showBlockedCpfToast(cpfRaw.replace(/\D/g, ''));
+        form.setError('cpf', { type: 'manual', message: 'CPF bloqueado. Fale com o suporte.' });
+      } else if (form.getFieldState('cpf').error?.message === 'CPF bloqueado. Fale com o suporte.') {
+        form.clearErrors('cpf');
+      }
+    } catch {
+    }
+  };
+
   async function onSubmit(values: z.infer<typeof checkoutSchema>) {
+    const normalizedCpf = values.cpf.replace(/\D/g, '');
+    if (blockedCpf && normalizedCpf === blockedCpf) {
+      showBlockedCpfToast(blockedCpf);
+      return;
+    }
+
+    const isBlocked = await checkCpfIsBlocked(values.cpf);
+    if (isBlocked) {
+      showBlockedCpfToast(normalizedCpf);
+      return;
+    }
     
     let customerData: CustomerInfo = {
       name: values.name,
@@ -335,7 +437,7 @@ export default function CheckoutForm() {
             <h3 className="text-xl font-semibold mb-4 font-headline">Informações do Cliente</h3>
             <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} /></FormControl><FormMessage /></FormItem> )} />
+                    <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF</FormLabel><FormControl><Input placeholder="000.000.000-00" {...field} onBlur={(e) => { field.onBlur(); void handleCpfBlurCheck(e.target.value); }} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Nome Completo</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="phone" render={({ field }) => ( <FormItem><FormLabel>Telefone (WhatsApp)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="phone2" render={({ field }) => ( <FormItem><FormLabel>Telefone 2 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />

@@ -114,13 +114,12 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
     });
 
     useEffect(() => {
-        const totalLoading = isLoading || permissionsLoading || settingsLoading;
-        if (!totalLoading && !isAuthenticated) {
+        if (!isLoading && !isAuthenticated) {
             router.push('/login');
             return;
         }
 
-        if (!totalLoading && isAuthenticated && user && permissions) {
+        if (!isLoading && !permissionsLoading && !settingsLoading && isAuthenticated && user && permissions) {
             // Check for commercial hours access
             if (
                 settings.accessControlEnabled && 
@@ -166,10 +165,26 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
         }
     };
 
-    if (isLoading || permissionsLoading || settingsLoading || !isAuthenticated || !user) {
+    if (isLoading) {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-background">
                 <p>Verificando autenticação e permissões...</p>
+            </div>
+        );
+    }
+
+    if (!isAuthenticated || !user) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <p>Redirecionando...</p>
+            </div>
+        );
+    }
+
+    if (permissionsLoading || settingsLoading) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background">
+                <p>Carregando painel...</p>
             </div>
         );
     }

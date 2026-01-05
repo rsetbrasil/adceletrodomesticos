@@ -23,17 +23,17 @@ function Calendar({
       classNames={{
         [UI.Months]: "flex flex-col sm:flex-row space-y-4 sm:space-x-4 sm:space-y-0",
         [UI.Month]: "space-y-4",
-        [UI.MonthCaption]: "flex justify-center pt-1 relative items-center",
+        [UI.MonthCaption]: "relative flex w-full items-center justify-center pt-1 pb-2",
         [UI.CaptionLabel]: "text-sm font-medium",
         [UI.Dropdowns]: "flex justify-center gap-1",
-        [UI.Nav]: "space-x-1 flex items-center",
+        [UI.Nav]: "absolute left-0 right-0 top-1 z-10 flex items-center justify-between px-3 pointer-events-none",
         [UI.ButtonPrevious]: cn(
           buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute left-1"
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 pointer-events-auto z-10"
         ),
         [UI.ButtonNext]: cn(
           buttonVariants({ variant: "outline" }),
-          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 absolute right-1"
+          "h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 pointer-events-auto z-10"
         ),
         [UI.MonthGrid]: "w-full border-collapse space-y-1",
         [UI.Weekdays]: "flex",

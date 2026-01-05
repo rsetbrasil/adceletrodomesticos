@@ -47,22 +47,38 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
         return;
     }
 
-    const { db } = getClientFirebase();
-    const ordersRef = collection(db, 'orders');
-    const q = query(ordersRef, where('customer.cpf', '==', customer.cpf));
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-        const ordersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
-        setCustomerOrders(ordersData);
-    }, (error) => {
-        console.error("Error fetching customer orders: ", error);
-    });
+    try {
+      const { db } = getClientFirebase();
+      const ordersRef = collection(db, 'orders');
+      const q = query(ordersRef, where('customer.cpf', '==', customer.cpf));
+      
+      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+          const ordersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
+          setCustomerOrders(ordersData);
+      }, (error) => {
+          console.error("Error fetching customer orders: ", error);
+      });
 
-    return () => unsubscribe();
+      return () => unsubscribe();
+    } catch (error) {
+      setCustomerOrders([]);
+      return;
+    }
   }, [customer]);
 
   const login = async (cpf: string, pass: string): Promise<boolean> => {
-    const { db } = getClientFirebase();
+    let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
+    try {
+      ({ db } = getClientFirebase());
+    } catch (error) {
+      toast({ title: 'Erro de Autenticação', description: 'Firebase não está configurado.', variant: 'destructive' });
+      return false;
+    }
+    if (!db) {
+      toast({ title: 'Erro de Autenticação', description: 'Firebase não está configurado.', variant: 'destructive' });
+      return false;
+    }
+
     const normalizedCpf = cpf.replace(/\D/g, '');
     
     const ordersRef = collection(db, 'orders');
@@ -70,8 +86,28 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
 
     try {
         const querySnapshot = await new Promise<import('firebase/firestore').QuerySnapshot>((resolve, reject) => {
-            const unsubscribe = onSnapshot(q, resolve, reject);
-            // Optional: You might want to unsubscribe after the first snapshot if you don't need real-time updates for login
+            let unsubscribe: (() => void) | null = null;
+            let settled = false;
+            const timeoutId = window.setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                unsubscribe?.();
+                reject(new Error('timeout'));
+            }, 8000);
+
+            unsubscribe = onSnapshot(q, (snapshot) => {
+                if (settled) return;
+                settled = true;
+                window.clearTimeout(timeoutId);
+                unsubscribe?.();
+                resolve(snapshot);
+            }, (error) => {
+                if (settled) return;
+                settled = true;
+                window.clearTimeout(timeoutId);
+                unsubscribe?.();
+                reject(error);
+            });
         });
         
         const customerOrders = querySnapshot.docs.map(doc => doc.data() as Order);

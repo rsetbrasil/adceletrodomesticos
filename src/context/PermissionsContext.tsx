@@ -29,32 +29,43 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     const { logAction } = useAudit();
     
     useEffect(() => {
-        const { db } = getClientFirebase();
-        if (!db) {
+        let unsubscribe: (() => void) | null = null;
+        const timeoutId = window.setTimeout(() => {
             setPermissions(initialPermissions);
             setIsLoading(false);
-            return;
-        }
-        const permissionsRef = doc(db, 'config', 'rolePermissions');
-        const unsubscribe = onSnapshot(permissionsRef, async (docSnap) => {
-            if (docSnap.exists()) {
-                setPermissions(docSnap.data() as RolePermissions);
-            } else {
-                await setDoc(permissionsRef, initialPermissions);
+        }, 8000);
+        try {
+            const { db } = getClientFirebase();
+            const permissionsRef = doc(db, 'config', 'rolePermissions');
+            unsubscribe = onSnapshot(permissionsRef, async (docSnap) => {
+                window.clearTimeout(timeoutId);
+                if (docSnap.exists()) {
+                    setPermissions(docSnap.data() as RolePermissions);
+                } else {
+                    await setDoc(permissionsRef, initialPermissions);
+                    setPermissions(initialPermissions);
+                }
+                setIsLoading(false);
+            }, (error) => {
+                window.clearTimeout(timeoutId);
+                console.error("Failed to load permissions from Firestore:", error);
+                errorEmitter.emit('permission-error', new FirestorePermissionError({
+                    path: 'config/rolePermissions',
+                    operation: 'get',
+                }));
                 setPermissions(initialPermissions);
-            }
+                setIsLoading(false);
+            });
+        } catch (error) {
+            window.clearTimeout(timeoutId);
+            setPermissions(initialPermissions);
             setIsLoading(false);
-        }, (error) => {
-            console.error("Failed to load permissions from Firestore:", error);
-            errorEmitter.emit('permission-error', new FirestorePermissionError({
-                path: 'config/rolePermissions',
-                operation: 'get',
-            }));
-            setPermissions(initialPermissions); // Fallback
-            setIsLoading(false);
-        });
+        }
 
-        return () => unsubscribe();
+        return () => {
+            window.clearTimeout(timeoutId);
+            unsubscribe?.();
+        };
     }, [toast]);
 
     const updatePermissions = useCallback(async (newPermissions: RolePermissions) => {

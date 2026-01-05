@@ -5,10 +5,45 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { getClientFirebase } from '@/lib/firebase-client';
-import type { Product, Category, Order, CommissionPayment, StockAudit, Avaria, CustomerInfo, ChatSession } from '@/lib/types';
+import type { Product, Category } from '@/lib/types';
 
-// This context now only handles PUBLIC data.
-// Admin-related data has been moved to AdminContext for performance optimization.
+type CatalogCache<T> = {
+  updatedAt: number;
+  data: T;
+};
+
+const MAX_LOCAL_STORAGE_CHARS = 4_000_000;
+
+const saveToLocalStorage = (key: string, data: unknown) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const serialized = JSON.stringify(data);
+    if (serialized.length > MAX_LOCAL_STORAGE_CHARS) {
+      try {
+        localStorage.removeItem(key);
+      } catch {
+      }
+      return;
+    }
+    localStorage.setItem(key, serialized);
+  } catch {
+  }
+};
+
+const loadFromLocalStorage = <T,>(key: string): T | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch (error) {
+    console.error(`Failed to load ${key} from localStorage`, error);
+    return null;
+  }
+};
+
+const PRODUCTS_CACHE_KEY = 'catalogProducts';
+const CATEGORIES_CACHE_KEY = 'catalogCategories';
+
 interface DataContextType {
   products: Product[];
   categories: Category[];
@@ -23,33 +58,59 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const { db } = getClientFirebase();
-    if (!db) {
+    const cachedProducts = loadFromLocalStorage<CatalogCache<Product[]>>(PRODUCTS_CACHE_KEY);
+    const cachedCategories = loadFromLocalStorage<CatalogCache<Category[]>>(CATEGORIES_CACHE_KEY);
+    const hasCachedProducts = !!cachedProducts?.data?.length;
+
+    if (hasCachedProducts) {
+      setProducts(cachedProducts.data);
+      setIsLoading(false);
+    }
+    if (cachedCategories?.data?.length) {
+      setCategories(cachedCategories.data);
+    }
+
+    const timeoutId = hasCachedProducts
+      ? null
+      : window.setTimeout(() => {
+          setProducts([]);
+          setCategories([]);
+          setIsLoading(false);
+        }, 8000);
+    try {
+      const { db } = getClientFirebase();
+      const productsUnsubscribe = onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'asc')), (snapshot) => {
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        const fetchedProducts = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Product));
+        setProducts(fetchedProducts);
+        setIsLoading(false);
+        saveToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: fetchedProducts } satisfies CatalogCache<Product[]>);
+      }, (error) => {
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
+          console.error("Error fetching products:", error);
+          setIsLoading(false);
+      });
+
+      const categoriesUnsubscribe = onSnapshot(query(collection(db, 'categories'), orderBy('order')), (snapshot) => {
+        const fetchedCategories = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category));
+        setCategories(fetchedCategories);
+        saveToLocalStorage(CATEGORIES_CACHE_KEY, { updatedAt: Date.now(), data: fetchedCategories } satisfies CatalogCache<Category[]>);
+      }, (error) => {
+          console.error("Error fetching categories:", error);
+      });
+      
+      return () => {
+        if (timeoutId !== null) window.clearTimeout(timeoutId);
+        productsUnsubscribe();
+        categoriesUnsubscribe();
+      };
+    } catch (error) {
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
       setProducts([]);
       setCategories([]);
       setIsLoading(false);
       return;
     }
-
-    const productsUnsubscribe = onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'asc')), (snapshot) => {
-      const fetchedProducts = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Product));
-      setProducts(fetchedProducts);
-      setIsLoading(false);
-    }, (error) => {
-        console.error("Error fetching products:", error);
-        setIsLoading(false);
-    });
-
-    const categoriesUnsubscribe = onSnapshot(query(collection(db, 'categories'), orderBy('order')), (snapshot) => {
-      setCategories(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category)));
-    }, (error) => {
-        console.error("Error fetching categories:", error);
-    });
-    
-    return () => {
-      productsUnsubscribe();
-      categoriesUnsubscribe();
-    };
   }, []);
 
   const value = useMemo(() => ({

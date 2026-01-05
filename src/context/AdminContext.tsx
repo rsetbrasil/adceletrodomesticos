@@ -6,7 +6,7 @@ import React, { createContext, useContext, ReactNode, useCallback, useState, use
 import type { Order, Product, Installment, CustomerInfo, Category, User, CommissionPayment, Payment, StockAudit, Avaria, ChatSession } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, doc, writeBatch, setDoc, updateDoc, deleteDoc, getDocs, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, doc, writeBatch, setDoc, updateDoc, deleteDoc, getDocs, query, orderBy, onSnapshot, deleteField } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { useData } from './DataContext';
@@ -83,6 +83,7 @@ interface AdminContextType {
   updateInstallmentAmount: (orderId: string, installmentNumber: number, newAmount: number, logAction: LogAction, user: User | null) => Promise<void>;
   updateCustomer: (oldCustomer: CustomerInfo, updatedCustomerData: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
   deleteCustomer: (customer: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
+  restoreCustomer: (customer: CustomerInfo, logAction: LogAction, user: User | null) => Promise<void>;
   importCustomers: (csvData: string, logAction: LogAction, user: User | null) => Promise<void>;
   updateOrderDetails: (orderId: string, details: Partial<Order> & { downPayment?: number, resetDownPayment?: boolean }, logAction: LogAction, user: User | null) => Promise<void>;
   addProduct: (productData: Omit<Product, 'id' | 'data-ai-hint' | 'createdAt'>, logAction: LogAction, user: User | null) => Promise<void>;
@@ -140,7 +141,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   // Effect for fetching admin-specific data
   useEffect(() => {
-    const { db } = getClientFirebase();
+    let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
+    try {
+      ({ db } = getClientFirebase());
+    } catch (error) {
+      return;
+    }
     if (!db) return;
     const unsubscribes: (() => void)[] = [];
 
@@ -725,6 +731,18 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const ordersSnapshot = await getDocs(query(ordersCollection));
     const allOrders = ordersSnapshot.docs.map(d => d.data() as Order);
 
+    if (order.customer?.isDeleted) {
+      throw new Error('Cliente está na lixeira e não pode comprar. Entre em contato com o suporte.');
+    }
+
+    const normalizedCpf = order.customer?.cpf?.replace(/\D/g, '');
+    if (normalizedCpf) {
+      const isCustomerBlocked = allOrders.some(o => o.customer?.cpf?.replace(/\D/g, '') === normalizedCpf && !!o.customer?.isDeleted);
+      if (isCustomerBlocked) {
+        throw new Error('Cliente está na lixeira e não pode comprar. Entre em contato com o suporte.');
+      }
+    }
+
     const prefix = order.items && order.items.length > 0 ? 'PED' : 'REG';
     const lastOrderWithPrefix = allOrders
       .filter(o => o.id.startsWith(`${prefix}-`))
@@ -1010,34 +1028,105 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   }, [orders, toast]);
   
   const deleteCustomer = useCallback(async (customer: CustomerInfo, logAction: LogAction, user: User | null) => {
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+        toast({ title: "Acesso negado", description: "Apenas admin e gerente podem excluir clientes.", variant: "destructive" });
+        return;
+    }
     const { db } = getClientFirebase();
     const customerKey = customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
 
-    const ordersToDelete = orders.filter(order => {
+    const ordersToTrash = orders.filter(order => {
         const orderCustomerKey = order.customer.cpf?.replace(/\D/g, '') || `${order.customer.name}-${order.customer.phone}`;
         return orderCustomerKey === customerKey;
     });
 
-    if (ordersToDelete.length === 0) {
+    if (ordersToTrash.length === 0) {
         toast({ title: "Nenhum pedido encontrado", description: "Não há registros para este cliente.", variant: "destructive" });
         return;
     }
     
     const batch = writeBatch(db);
-    ordersToDelete.forEach(order => {
-        batch.delete(doc(db, 'orders', order.id));
+    const deletedAt = new Date().toISOString();
+    ordersToTrash.forEach(order => {
+        batch.update(doc(db, 'orders', order.id), {
+            status: 'Excluído',
+            previousStatus: order.status,
+            customer: {
+                ...order.customer,
+                isDeleted: true,
+                deletedAt,
+                deletedBy: user.name,
+                deletedById: user.id,
+            },
+        });
     });
 
     batch.commit().then(() => {
-        logAction('Exclusão de Cliente', `Cliente ${customer.name} (CPF: ${customer.cpf}) e todos os seus ${ordersToDelete.length} pedidos foram excluídos.`, user);
-        toast({ title: "Cliente Excluído!", description: `O cliente ${customer.name} e todos os seus pedidos foram removidos permanentemente.`, variant: "destructive" });
+        logAction('Cliente movido para lixeira', `Cliente ${customer.name} (CPF: ${customer.cpf}) e todos os seus ${ordersToTrash.length} pedidos foram movidos para a lixeira.`, user);
+        toast({ title: "Cliente movido para a lixeira!", description: `O cliente ${customer.name} foi movido para a lixeira.`, variant: "destructive" });
     }).catch(async(e) => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: 'orders',
-            operation: 'delete',
+            operation: 'update',
         }));
     });
 }, [orders, toast]);
+
+  const restoreCustomer = useCallback(async (customer: CustomerInfo, logAction: LogAction, user: User | null) => {
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+        toast({ title: "Acesso negado", description: "Apenas admin e gerente podem restaurar clientes.", variant: "destructive" });
+        return;
+    }
+    const { db } = getClientFirebase();
+    const customerKey = customer.cpf?.replace(/\D/g, '') || `${customer.name}-${customer.phone}`;
+
+    const ordersToRestore = orders.filter(order => {
+        const orderCustomerKey = order.customer.cpf?.replace(/\D/g, '') || `${order.customer.name}-${order.customer.phone}`;
+        return orderCustomerKey === customerKey;
+    });
+
+    if (ordersToRestore.length === 0) {
+        toast({ title: "Nenhum pedido encontrado", description: "Não há registros para este cliente.", variant: "destructive" });
+        return;
+    }
+
+    const chunkSize = 450;
+    for (let start = 0; start < ordersToRestore.length; start += chunkSize) {
+        const slice = ordersToRestore.slice(start, start + chunkSize);
+        const batch = writeBatch(db);
+
+        slice.forEach(order => {
+            const nextStatus =
+                order.previousStatus && order.previousStatus !== 'Excluído'
+                    ? order.previousStatus
+                    : order.items.length > 0
+                        ? 'Processando'
+                        : 'Excluído';
+
+            batch.update(doc(db, 'orders', order.id), {
+                status: nextStatus,
+                previousStatus: deleteField(),
+                customer: {
+                    ...order.customer,
+                    isDeleted: false,
+                    deletedAt: deleteField(),
+                    deletedBy: deleteField(),
+                    deletedById: deleteField(),
+                },
+            });
+        });
+
+        await batch.commit().catch(async () => {
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+                path: 'orders',
+                operation: 'update',
+            }));
+        });
+    }
+
+    logAction('Cliente restaurado', `Cliente ${customer.name} (CPF: ${customer.cpf}) foi restaurado da lixeira.`, user);
+    toast({ title: "Cliente restaurado!", description: `O cliente ${customer.name} foi restaurado.`, duration: 5000 });
+  }, [orders, toast]);
 
   const importCustomers = useCallback(async (csvData: string, logAction: LogAction, user: User | null) => {
     const { db } = getClientFirebase();
@@ -1097,7 +1186,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         const data = line.split(delimiter);
         const customer: Partial<CustomerInfo> = {};
         for (const key in headerMap) {
-            const typedKey = key as keyof CustomerInfo;
+            const typedKey = key as keyof Omit<CustomerInfo, 'password' | 'isDeleted' | 'deletedAt' | 'deletedBy' | 'deletedById'>;
             const colIndex = headerMap[key];
             if (colIndex !== undefined && colIndex < data.length) {
                 customer[typedKey] = data[colIndex]?.trim().replace(/["']/g, '') || '';
@@ -1459,6 +1548,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   
   const value = useMemo(() => ({
     addOrder, deleteOrder, permanentlyDeleteOrder, updateOrderStatus, recordInstallmentPayment, reversePayment, updateInstallmentDueDate, updateInstallmentAmount, updateCustomer, deleteCustomer, importCustomers, updateOrderDetails,
+    restoreCustomer,
     addProduct, updateProduct, deleteProduct,
     addCategory, deleteCategory, updateCategoryName, addSubcategory, updateSubcategory, deleteSubcategory, moveCategory, reorderSubcategories, moveSubcategory,
     payCommissions, reverseCommissionPayment,
@@ -1478,6 +1568,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     commissionSummary,
   }), [
     addOrder, deleteOrder, permanentlyDeleteOrder, updateOrderStatus, recordInstallmentPayment, reversePayment, updateInstallmentDueDate, updateInstallmentAmount, updateCustomer, deleteCustomer, importCustomers, updateOrderDetails,
+    restoreCustomer,
     addProduct, updateProduct, deleteProduct,
     addCategory, deleteCategory, updateCategoryName, addSubcategory, updateSubcategory, deleteSubcategory, moveCategory, reorderSubcategories, moveSubcategory,
     payCommissions, reverseCommissionPayment,

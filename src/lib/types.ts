@@ -71,6 +71,10 @@ export type CustomerInfo = {
   state: string;
   password?: string;
   observations?: string;
+  isDeleted?: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletedById?: string;
 };
 
 export type Payment = {
@@ -95,6 +99,8 @@ export type Installment = {
 
 export type PaymentMethod = 'Crediário' | 'Pix' | 'Dinheiro';
 
+export type OrderStatus = 'Processando' | 'Enviado' | 'Entregue' | 'Cancelado' | 'Excluído';
+
 export type Order = {
   id: string;
   customer: CustomerInfo;
@@ -106,7 +112,8 @@ export type Order = {
   installmentValue: number;
   date: string;
   firstDueDate?: Date;
-  status: 'Processando' | 'Enviado' | 'Entregue' | 'Cancelado' | 'Excluído';
+  status: OrderStatus;
+  previousStatus?: OrderStatus;
   paymentMethod: PaymentMethod;
   installmentDetails: Installment[];
   attachments?: Attachment[];
