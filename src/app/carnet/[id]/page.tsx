@@ -60,6 +60,11 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
             <div>
                 <p className="text-xs print:text-[8px] text-muted-foreground">CLIENTE</p>
                 <p className="font-semibold">{order.customer.name}</p>
+                {order.customer.code && (
+                    <p className="text-xs print:text-[8px] text-muted-foreground">
+                        CÓDIGO: <span className="font-semibold text-foreground">{order.customer.code}</span>
+                    </p>
+                )}
             </div>
              <div>
                 <p className="text-xs print:text-[8px] text-muted-foreground">CPF</p>

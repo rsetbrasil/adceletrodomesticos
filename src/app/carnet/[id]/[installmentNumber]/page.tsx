@@ -60,6 +60,7 @@ const ReceiptContent = ({ order, installment, settings, via }: { order: Order; i
             <div className="grid grid-cols-2 gap-x-4 border-y border-black py-2">
                 <div className="space-y-1">
                     <p>CLIENTE: {order.customer.name.toUpperCase()}</p>
+                    {order.customer.code && <p>CÓDIGO: {order.customer.code}</p>}
                     <p>CPF: {order.customer.cpf}</p>
                     <p>TELEFONE: {order.customer.phone}</p>
                     <p>ENDEREÇO: {`${order.customer.address}, ${order.customer.number}${order.customer.complement ? `, ${order.customer.complement}` : ''}`}</p>
