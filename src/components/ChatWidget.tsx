@@ -9,7 +9,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageSquare, X, Send, User, RotateCcw, Paperclip, FileText, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, doc, setDoc, onSnapshot, addDoc, query, orderBy, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, onSnapshot, addDoc, query, orderBy, updateDoc, type Firestore } from 'firebase/firestore';
 import type { ChatMessage, ChatSession, ChatAttachment } from '@/lib/types';
 import { format } from 'date-fns';
 import { Label } from '@/components/ui/label';
@@ -37,7 +37,7 @@ export default function ChatWidget() {
     const [session, setSession] = useState<ChatSession | null>(null);
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { db } = getClientFirebase();
+    const [db, setDb] = useState<Firestore | null>(null);
     const { toast } = useToast();
     const previousSessionRef = useRef<ChatSession | null>(null);
     
@@ -47,6 +47,14 @@ export default function ChatWidget() {
 
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [hasInteracted, setHasInteracted] = useState(false);
+
+    useEffect(() => {
+        try {
+            setDb(getClientFirebase().db);
+        } catch {
+            setDb(null);
+        }
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined' && !audioRef.current) {
@@ -77,6 +85,7 @@ export default function ChatWidget() {
 
     useEffect(() => {
         if (!visitorId) return;
+        if (!db) return;
 
         const sessionRef = doc(db, 'chatSessions', visitorId);
 
@@ -119,6 +128,7 @@ export default function ChatWidget() {
     }, [messages]);
 
     const handleToggleChat = () => {
+        if (!db) return;
         setIsOpen(prev => {
             const newOpenState = !prev;
             if (newOpenState && session?.unreadByVisitor) {
@@ -143,12 +153,14 @@ export default function ChatWidget() {
     };
     
     const handleStartNewChat = async () => {
+        if (!db) return;
         if (!session) return;
         const sessionRef = doc(db, 'chatSessions', session.id);
         await updateDoc(sessionRef, { status: 'open', satisfaction: null });
     };
     
     const handleSendMessage = async (text: string, attachment: ChatAttachment | null) => {
+        if (!db) return;
         const messageText = text || (attachment ? attachment.name : '');
         if (messageText.trim() === '' || !hasSetName) return;
         
@@ -199,6 +211,7 @@ export default function ChatWidget() {
     };
 
     const handleSendFeedback = async (rating: 'Ótimo' | 'Bom' | 'Ruim') => {
+        if (!db) return;
         if (!session) return;
         const sessionRef = doc(db, 'chatSessions', session.id);
         await updateDoc(sessionRef, {

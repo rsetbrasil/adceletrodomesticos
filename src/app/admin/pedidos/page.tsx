@@ -1096,7 +1096,13 @@ Não esqueça de enviar o comprovante!`;
                                                                     </Button>
                                                                 </PopoverTrigger>
                                                                 <PopoverContent className="w-auto p-0">
-                                                                    <Calendar locale={ptBR} mode="single" selected={new Date(inst.dueDate)} onSelect={(date) => handleDueDateChange(selectedOrder.id, inst.installmentNumber, date)} />
+                                                                    <Calendar
+                                                                        locale={ptBR}
+                                                                        mode="single"
+                                                                        selected={new Date(inst.dueDate)}
+                                                                        defaultMonth={new Date(inst.dueDate)}
+                                                                        onSelect={(date) => handleDueDateChange(selectedOrder.id, inst.installmentNumber, date)}
+                                                                    />
                                                                 </PopoverContent>
                                                             </Popover>
                                                         </TableCell>

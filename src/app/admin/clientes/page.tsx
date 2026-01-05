@@ -879,7 +879,7 @@ Não esqueça de enviar o comprovante!`;
                                                                                     <span className="text-sm font-medium group-hover:underline break-words" title={file.name}>
                                                                                         {file.name}
                                                                                     </span>
-                                                                                    {file.comment && <p className="text-xs text-muted-foreground mt-1 italic">"{file.comment}"</p>}
+                                                                                    {file.comment && <p className="text-xs text-muted-foreground mt-1 italic">&quot;{file.comment}&quot;</p>}
                                                                                      {file.addedAt && (
                                                                                         <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                                                                                             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{format(parseISO(file.addedAt), 'dd/MM/yy HH:mm')}</span>
@@ -895,7 +895,7 @@ Não esqueça de enviar o comprovante!`;
                                                                                     <span className="text-sm font-medium group-hover:underline break-words" title={file.name}>
                                                                                         {file.name}
                                                                                     </span>
-                                                                                    {file.comment && <p className="text-xs text-muted-foreground mt-1 italic">"{file.comment}"</p>}
+                                                                                    {file.comment && <p className="text-xs text-muted-foreground mt-1 italic">&quot;{file.comment}&quot;</p>}
                                                                                     {file.addedAt && (
                                                                                         <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
                                                                                             <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{format(parseISO(file.addedAt), 'dd/MM/yy HH:mm')}</span>

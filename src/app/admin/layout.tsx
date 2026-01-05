@@ -67,7 +67,7 @@ const isWithinCommercialHours = (start: string, end: string) => {
     return currentTime >= startTime && currentTime <= endTime;
 };
 
-export function ModeToggle() {
+function ModeToggle() {
   const { setTheme } = useTheme()
  
   return (

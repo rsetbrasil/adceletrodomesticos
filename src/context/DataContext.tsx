@@ -24,6 +24,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const { db } = getClientFirebase();
+    if (!db) {
+      setProducts([]);
+      setCategories([]);
+      setIsLoading(false);
+      return;
+    }
+
     const productsUnsubscribe = onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'asc')), (snapshot) => {
       const fetchedProducts = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Product));
       setProducts(fetchedProducts);

@@ -30,6 +30,11 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     
     useEffect(() => {
         const { db } = getClientFirebase();
+        if (!db) {
+            setPermissions(initialPermissions);
+            setIsLoading(false);
+            return;
+        }
         const permissionsRef = doc(db, 'config', 'rolePermissions');
         const unsubscribe = onSnapshot(permissionsRef, async (docSnap) => {
             if (docSnap.exists()) {
@@ -55,6 +60,10 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     const updatePermissions = useCallback(async (newPermissions: RolePermissions) => {
         try {
             const { db } = getClientFirebase();
+            if (!db) {
+                toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+                return;
+            }
             const permissionsRef = doc(db, 'config', 'rolePermissions');
             await setDoc(permissionsRef, newPermissions);
             // Real-time listener will update the state

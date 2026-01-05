@@ -70,12 +70,6 @@ function StockAuditTab() {
         }
     }, [mes, ano, stockAudits]);
 
-
-     if (user?.role !== 'admin' && user?.role !== 'gerente') {
-        router.push('/admin/pedidos');
-        return <p>Acesso negado. Redirecionando...</p>;
-    }
-
     const handleMonthChange = (newMonth: string) => {
         setMes(newMonth);
     };
@@ -103,6 +97,12 @@ function StockAuditTab() {
             };
         }).sort((a, b) => a.name.localeCompare(b.name));
     }, [products, stockCounts]);
+
+    useEffect(() => {
+        if (user?.role !== 'admin' && user?.role !== 'gerente') {
+            router.push('/admin/pedidos');
+        }
+    }, [user, router]);
     
     const handleSaveAudit = () => {
         if (!user) return;
@@ -127,6 +127,10 @@ function StockAuditTab() {
 
     const anos = getAnos();
     const mesLabel = meses.find(m => m.value === mes)?.label;
+
+     if (user?.role !== 'admin' && user?.role !== 'gerente') {
+        return <p>Acesso negado. Redirecionando...</p>;
+    }
     
      if (!products) {
         return <p>Carregando produtos...</p>

@@ -22,6 +22,11 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     const { db } = getClientFirebase();
+    if (!db) {
+      setAuditLogs([]);
+      setIsLoading(false);
+      return;
+    }
     const logsCollection = collection(db, 'auditLogs');
     const q = query(logsCollection, orderBy('timestamp', 'desc'));
 
@@ -45,6 +50,7 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
   const logAction = useCallback(async (action: string, details: string, user: User | null) => {
     if (!user) return;
     const { db } = getClientFirebase();
+    if (!db) return;
 
     const logId = `log-${Date.now()}`;
     const newLog: AuditLog = {

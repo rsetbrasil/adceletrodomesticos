@@ -140,8 +140,8 @@ const CustomProductForm = ({ onAdd }: { onAdd: (item: CartItem) => void }) => {
                     </div>
                 </div>
                 <DialogFooter>
-                    <Button variant="outline" onClick={() => setIsOpen(false)}>Cancelar</Button>
-                    <Button onClick={handleAdd}>Adicionar ao Pedido</Button>
+                    <Button type="button" variant="outline" onClick={() => setIsOpen(false)}>Cancelar</Button>
+                    <Button type="button" onClick={handleAdd}>Adicionar ao Pedido</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -376,6 +376,7 @@ export default function CreateOrderPage() {
                       <PopoverTrigger asChild>
                         <FormControl>
                           <Button
+                            type="button"
                             variant="outline"
                             role="combobox"
                             className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
@@ -557,9 +558,9 @@ export default function CreateOrderPage() {
                                                 min={1}
                                             />
                                         </TableCell>
-                                        <TableCell className="text-right">{formatCurrency(item.price * item.quantity)}</TableCell>
+                                    <TableCell className="text-right">{formatCurrency(item.price * item.quantity)}</TableCell>
                                         <TableCell className="text-right">
-                                            <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveItem(item.id)}>
+                                            <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => handleRemoveItem(item.id)}>
                                                 <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </TableCell>
@@ -577,6 +578,7 @@ export default function CreateOrderPage() {
                    <Popover open={openProductPopover} onOpenChange={setOpenProductPopover}>
                         <PopoverTrigger asChild>
                            <Button
+                            type="button"
                             variant="outline"
                             role="combobox"
                             aria-expanded={openProductPopover}
@@ -638,6 +640,11 @@ export default function CreateOrderPage() {
                                             const rawValue = e.target.value.replace(/\D/g, '');
                                             field.onChange(Number(rawValue) / 100);
                                         }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                            }
+                                        }}
                                     />
                                 </FormControl>
                                 <FormMessage />
@@ -659,6 +666,11 @@ export default function CreateOrderPage() {
                                         onChange={(e) => {
                                             const rawValue = e.target.value.replace(/\D/g, '');
                                             field.onChange(Number(rawValue) / 100);
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                            }
                                         }}
                                     />
                                 </FormControl>

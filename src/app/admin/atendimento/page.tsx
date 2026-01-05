@@ -4,7 +4,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, doc, updateDoc, addDoc, serverTimestamp, type Firestore } from 'firebase/firestore';
 import type { ChatMessage, ChatSession, ChatAttachment } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow } from 'date-fns';
@@ -37,7 +37,7 @@ export default function AtendimentoPage() {
     const [nameFilter, setNameFilter] = useState('');
     const scrollAreaRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const { db } = getClientFirebase();
+    const [db, setDb] = useState<Firestore | null>(null);
     const { toast } = useToast();
     const prevSessionsRef = useRef<ChatSession[]>([]);
 
@@ -50,6 +50,14 @@ export default function AtendimentoPage() {
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [hasInteracted, setHasInteracted] = useState(false);
     const [imageToView, setImageToView] = useState<string | null>(null);
+
+    useEffect(() => {
+        try {
+            setDb(getClientFirebase().db);
+        } catch {
+            setDb(null);
+        }
+    }, []);
 
     useEffect(() => {
         if (typeof window !== 'undefined' && !audioRef.current) {
@@ -106,7 +114,7 @@ export default function AtendimentoPage() {
 
 
     useEffect(() => {
-        if (!selectedSession) {
+        if (!selectedSession || !db) {
             setMessages([]);
             return;
         }
@@ -135,6 +143,7 @@ export default function AtendimentoPage() {
     }, [messages]);
 
     const handleSelectSession = async (session: ChatSession) => {
+        if (!db) return;
         if (!hasInteracted && audioRef.current) {
           audioRef.current.play().catch(() => {});
           audioRef.current.pause();
@@ -156,6 +165,7 @@ export default function AtendimentoPage() {
     };
 
     const handleSendMessage = async (text: string, attachmentFile: File | null) => {
+        if (!db) return;
         if (!selectedSession || !user) return;
 
         let attachment: ChatAttachment | null = null;
@@ -240,6 +250,7 @@ export default function AtendimentoPage() {
     };
     
     const handleCloseSession = async () => {
+        if (!db) return;
         if (!selectedSession || !user) return;
         const sessionRef = doc(db, 'chatSessions', selectedSession.id);
         

@@ -40,17 +40,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     setIsLoading(true);
     const { db } = getClientFirebase();
-
-    const usersUnsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
-        setUsers(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as User)));
-    },
-    (error) => {
-      console.error("Error fetching users:", error);
-      errorEmitter.emit('permission-error', new FirestorePermissionError({
-        path: 'users',
-        operation: 'list',
-      }));
-    });
+    const usersUnsubscribe = db
+      ? onSnapshot(
+          collection(db, 'users'),
+          (snapshot) => {
+            setUsers(snapshot.docs.map(d => ({ ...d.data(), id: d.id } as User)));
+          },
+          (error) => {
+            console.error("Error fetching users:", error);
+            errorEmitter.emit('permission-error', new FirestorePermissionError({
+              path: 'users',
+              operation: 'list',
+            }));
+          }
+        )
+      : (() => {
+          setUsers(initialUsers);
+          return () => {};
+        })();
     
     try {
         const storedUser = localStorage.getItem('user');
@@ -109,6 +116,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const addUser = async (data: Omit<User, 'id'>): Promise<boolean> => {
     const { db } = getClientFirebase();
+    if (!db) {
+        toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+        return false;
+    }
     const isUsernameTaken = users.some(u => u.username.toLowerCase() === data.username.toLowerCase());
     if (isUsernameTaken) {
         toast({
@@ -141,6 +152,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const updateUser = async (userId: string, data: Partial<Omit<User, 'id'>>) => {
     const { db } = getClientFirebase();
+    if (!db) {
+        toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+        return;
+    }
     if (data.username) {
         const isUsernameTaken = users.some(u => u.id !== userId && u.username.toLowerCase() === data.username?.toLowerCase());
         if (isUsernameTaken) {
@@ -204,6 +219,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     const { db } = getClientFirebase();
+    if (!db) {
+      toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+      return;
+    }
     const userRef = doc(db, 'users', userId);
     const userToDelete = users.find(u => u.id === userId);
 
@@ -227,6 +246,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const changeMyPassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
       const { db } = getClientFirebase();
+      if (!db) {
+          toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+          return false;
+      }
       if (!user) {
           toast({ title: "Erro", description: "Você não está logado.", variant: "destructive" });
           return false;
@@ -248,6 +271,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   
   const restoreUsers = async (usersToRestore: User[]) => {
     const { db } = getClientFirebase();
+    if (!db) {
+        toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+        return;
+    }
     const batch = writeBatch(db);
     
     users.forEach(existingUser => {

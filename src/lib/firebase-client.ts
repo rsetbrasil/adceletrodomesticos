@@ -17,28 +17,27 @@ let app: FirebaseApp;
 let auth: Auth;
 let db: Firestore;
 
-if (typeof window !== 'undefined' && !getApps().length) {
-    app = initializeApp(firebaseConfig);
+function initClientFirebase() {
+    if (typeof window === 'undefined') {
+        throw new Error('getClientFirebase must be called on the client.');
+    }
+
+    if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
+        throw new Error('Firebase não está configurado. Defina NEXT_PUBLIC_FIREBASE_* em .env.local.');
+    }
+
+    if (!getApps().length) {
+        app = initializeApp(firebaseConfig);
+    } else {
+        app = getApp();
+    }
+
     auth = getAuth(app);
     db = getFirestore(app);
-} else if (typeof window !== 'undefined') {
-    app = getApp();
-    auth = getAuth(app);
-    db = getFirestore(app);
+
+    return { app, auth, db };
 }
 
 export function getClientFirebase() {
-    // This is a bit of a hack to ensure firebase is initialized on the client
-    // without having to make every calling component a client component.
-    if (typeof window !== 'undefined' && !getApps().length) {
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        db = getFirestore(app);
-    } else if (typeof window !== 'undefined') {
-        app = getApp();
-        auth = getAuth(app);
-        db = getFirestore(app);
-    }
-    
-    return { app, auth, db };
+    return initClientFirebase();
 }

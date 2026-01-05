@@ -434,7 +434,7 @@ export default function ProductForm({ productToEdit, onFinished }: ProductFormPr
                                         Produto em Promoção
                                     </FormLabel>
                                     <FormDescription>
-                                        Marque para exibir um selo de "Promoção" neste produto.
+                                        Marque para exibir um selo de &quot;Promoção&quot; neste produto.
                                     </FormDescription>
                                 </div>
                                 <FormControl>

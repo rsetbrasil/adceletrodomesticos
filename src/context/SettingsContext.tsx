@@ -44,6 +44,11 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         const { db } = getClientFirebase();
+        if (!db) {
+            setSettings(initialSettings);
+            setIsLoading(false);
+            return;
+        }
         const settingsRef = doc(db, 'config', 'storeSettings');
         const unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
             if (docSnap.exists()) {
@@ -69,6 +74,10 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     const updateSettings = async (newSettings: Partial<StoreSettings>) => {
         try {
             const { db } = getClientFirebase();
+            if (!db) {
+                toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
+                return;
+            }
             const settingsRef = doc(db, 'config', 'storeSettings');
             
             // Fetch the current settings from the database first

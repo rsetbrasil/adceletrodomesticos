@@ -141,6 +141,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   // Effect for fetching admin-specific data
   useEffect(() => {
     const { db } = getClientFirebase();
+    if (!db) return;
     const unsubscribes: (() => void)[] = [];
 
     const setupListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>, orderField = 'createdAt') => {
