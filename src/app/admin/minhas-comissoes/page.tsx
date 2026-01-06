@@ -56,19 +56,27 @@ export default function MyCommissionsPage() {
   const [isSellerReportOpen, setIsSellerReportOpen] = useState(false);
   const [selectedSellerReport, setSelectedSellerReport] = useState<SellerSalesReport | null>(null);
   
-  const pendingCommissions = useMemo(() => {
+  const myPendingCommissions = useMemo(() => {
     if (!user || !orders) return [];
-    
-    let userOrders = orders.filter(o => {
-      const isPending = o.status === 'Entregue' && typeof o.commission === 'number' && o.commission > 0 && !o.commissionPaid;
-      if (!isPending) return false;
-      if (isManagerOrAdmin) return true; // Manager/Admin sees all
-      return o.sellerId === user.id; // Seller sees only their own
-    });
-    return userOrders;
-  }, [orders, user, isManagerOrAdmin]);
+    return orders
+      .filter(o => {
+        const isPending = o.status === 'Entregue' && typeof o.commission === 'number' && o.commission > 0 && !o.commissionPaid;
+        if (!isPending) return false;
+        return o.sellerId === user.id;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [orders, user]);
 
-  const totalPending = pendingCommissions.reduce((acc, order) => acc + (order.commission || 0), 0);
+  const teamPendingCommissions = useMemo(() => {
+    if (!orders || !isManagerOrAdmin) return [];
+    return orders
+      .filter(o => o.status === 'Entregue' && typeof o.commission === 'number' && o.commission > 0 && !o.commissionPaid)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [orders, isManagerOrAdmin]);
+
+  const myTotalPending = useMemo(() => {
+    return myPendingCommissions.reduce((acc, order) => acc + (order.commission || 0), 0);
+  }, [myPendingCommissions]);
 
   const myPaidCommissions = useMemo(() => {
     if (!user || !commissionPayments) return [];
@@ -76,6 +84,14 @@ export default function MyCommissionsPage() {
       .filter(p => p.sellerId === user.id)
       .sort((a,b) => parseISO(b.paymentDate).getTime() - parseISO(a.paymentDate).getTime());
   }, [commissionPayments, user]);
+
+  const myTotalPaid = useMemo(() => {
+    return myPaidCommissions.reduce((acc, p) => acc + p.amount, 0);
+  }, [myPaidCommissions]);
+
+  const teamTotalPending = useMemo(() => {
+    return teamPendingCommissions.reduce((acc, order) => acc + (order.commission || 0), 0);
+  }, [teamPendingCommissions]);
 
   const deliveredOrders = useMemo(() => {
     if (!orders) return [];
@@ -217,41 +233,80 @@ export default function MyCommissionsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 mb-8">
+            {isManagerOrAdmin ? (
+              <div className="grid gap-4 md:grid-cols-3 mb-8">
                 <Card className="bg-amber-500/10 border-amber-500/20">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Saldo a Receber</CardTitle>
-                        <DollarSign className="h-4 w-4 text-amber-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-amber-600">{formatCurrency(totalPending)}</div>
-                        <p className="text-xs text-muted-foreground">Comissões de {pendingCommissions.length} vendas entregues.</p>
-                    </CardContent>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Minha Comissão a Receber</CardTitle>
+                    <DollarSign className="h-4 w-4 text-amber-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-amber-600">{formatCurrency(myTotalPending)}</div>
+                    <p className="text-xs text-muted-foreground">Comissões de {myPendingCommissions.length} vendas entregues.</p>
+                  </CardContent>
                 </Card>
+
                 <Card className="bg-green-500/10 border-green-500/20">
-                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                        <CardTitle className="text-sm font-medium">Total Já Recebido</CardTitle>
-                        <PiggyBank className="h-4 w-4 text-green-600" />
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold text-green-600">{formatCurrency(myPaidCommissions.reduce((acc, p) => acc + p.amount, 0))}</div>
-                        <p className="text-xs text-muted-foreground">Total de {myPaidCommissions.length} pagamentos recebidos.</p>
-                    </CardContent>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Minha Comissão Já Recebida</CardTitle>
+                    <PiggyBank className="h-4 w-4 text-green-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">{formatCurrency(myTotalPaid)}</div>
+                    <p className="text-xs text-muted-foreground">Total de {myPaidCommissions.length} pagamentos recebidos.</p>
+                  </CardContent>
                 </Card>
-            </div>
+
+                <Card className="bg-blue-500/10 border-blue-500/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Equipe a Receber</CardTitle>
+                    <Users className="h-4 w-4 text-blue-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-blue-600">{formatCurrency(teamTotalPending)}</div>
+                    <p className="text-xs text-muted-foreground">Comissões de {teamPendingCommissions.length} vendas entregues.</p>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 mb-8">
+                <Card className="bg-amber-500/10 border-amber-500/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Saldo a Receber</CardTitle>
+                    <DollarSign className="h-4 w-4 text-amber-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-amber-600">{formatCurrency(myTotalPending)}</div>
+                    <p className="text-xs text-muted-foreground">Comissões de {myPendingCommissions.length} vendas entregues.</p>
+                  </CardContent>
+                </Card>
+
+                <Card className="bg-green-500/10 border-green-500/20">
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Já Recebido</CardTitle>
+                    <PiggyBank className="h-4 w-4 text-green-600" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">{formatCurrency(myTotalPaid)}</div>
+                    <p className="text-xs text-muted-foreground">Total de {myPaidCommissions.length} pagamentos recebidos.</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
 
             <Tabs defaultValue="pending">
                 <TabsList>
-                    <TabsTrigger value="pending">Comissões Pendentes</TabsTrigger>
+                    <TabsTrigger value="my_pending">{isManagerOrAdmin ? 'Minhas Pendentes' : 'Comissões Pendentes'}</TabsTrigger>
                     <TabsTrigger value="history">Meus Pagamentos</TabsTrigger>
+                    {isManagerOrAdmin && <TabsTrigger value="team_pending">Pendentes da Equipe</TabsTrigger>}
                     {isManagerOrAdmin && <TabsTrigger value="all_history">Histórico Geral</TabsTrigger>}
                     {isManagerOrAdmin && <TabsTrigger value="reports">Relatórios</TabsTrigger>}
                 </TabsList>
-                <TabsContent value="pending" className="mt-4">
+                <TabsContent value="my_pending" className="mt-4">
                      <Card>
                         <CardHeader>
-                            <CardTitle>{isManagerOrAdmin ? 'Comissões Pendentes (Todos os Vendedores)' : 'Minhas Comissões a Receber'}</CardTitle>
-                            <CardDescription>{isManagerOrAdmin ? 'Lista de todas as vendas concluídas de todos os vendedores, cuja comissão ainda não foi paga.' : 'Esta é a lista de todas as suas vendas concluídas cuja comissão ainda não foi paga.'}</CardDescription>
+                            <CardTitle>Minhas Comissões a Receber</CardTitle>
+                            <CardDescription>Esta é a lista de todas as suas vendas concluídas cuja comissão ainda não foi paga.</CardDescription>
                         </CardHeader>
                         <CardContent>
                              <div className="rounded-md border">
@@ -259,18 +314,16 @@ export default function MyCommissionsPage() {
                                     <TableHeader>
                                         <TableRow>
                                             <TableHead>Data da Venda</TableHead>
-                                            {isManagerOrAdmin && <TableHead>Vendedor</TableHead>}
                                             <TableHead>Pedido ID</TableHead>
                                             <TableHead>Cliente</TableHead>
                                             <TableHead className="text-right">Valor da Comissão</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
-                                        {pendingCommissions.length > 0 ? (
-                                            pendingCommissions.map(order => (
+                                        {myPendingCommissions.length > 0 ? (
+                                            myPendingCommissions.map(order => (
                                                 <TableRow key={order.id}>
                                                     <TableCell>{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                                                    {isManagerOrAdmin && <TableCell>{order.sellerName}</TableCell>}
                                                     <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
                                                     <TableCell>{order.customer.name}</TableCell>
                                                     <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
@@ -278,9 +331,7 @@ export default function MyCommissionsPage() {
                                             ))
                                         ) : (
                                             <TableRow>
-                                                <TableCell colSpan={isManagerOrAdmin ? 5 : 4} className="h-24 text-center">
-                                                  {isManagerOrAdmin ? 'Nenhuma comissão pendente para a equipe.' : 'Você não tem comissões pendentes.'}
-                                                </TableCell>
+                                                <TableCell colSpan={4} className="h-24 text-center">Você não tem comissões pendentes.</TableCell>
                                             </TableRow>
                                         )}
                                     </TableBody>
@@ -289,6 +340,48 @@ export default function MyCommissionsPage() {
                         </CardContent>
                      </Card>
                 </TabsContent>
+                {isManagerOrAdmin && (
+                  <TabsContent value="team_pending" className="mt-4">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Comissões Pendentes (Equipe)</CardTitle>
+                        <CardDescription>Lista de todas as vendas concluídas de todos os vendedores, cuja comissão ainda não foi paga.</CardDescription>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="rounded-md border">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead>Data da Venda</TableHead>
+                                <TableHead>Vendedor</TableHead>
+                                <TableHead>Pedido ID</TableHead>
+                                <TableHead>Cliente</TableHead>
+                                <TableHead className="text-right">Valor da Comissão</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {teamPendingCommissions.length > 0 ? (
+                                teamPendingCommissions.map(order => (
+                                  <TableRow key={order.id}>
+                                    <TableCell>{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                    <TableCell>{order.sellerName}</TableCell>
+                                    <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
+                                    <TableCell>{order.customer.name}</TableCell>
+                                    <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
+                                  </TableRow>
+                                ))
+                              ) : (
+                                <TableRow>
+                                  <TableCell colSpan={5} className="h-24 text-center">Nenhuma comissão pendente para a equipe.</TableCell>
+                                </TableRow>
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                )}
                 <TabsContent value="history" className="mt-4">
                      <Card>
                         <CardHeader>

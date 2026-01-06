@@ -295,55 +295,46 @@ export default function FinanceiroPage() {
           </TabsList>
 
           <TabsContent value="geral">
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="rounded-md border overflow-hidden">
+              <Table className="w-full table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="px-2 py-2 text-xs">Vendedor</TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-center whitespace-nowrap">Vendas</TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                    <TableHead className="px-2 py-1.5 text-xs w-[38%]">Vendedor</TableHead>
+                    <TableHead className="px-2 py-1.5 text-xs text-center whitespace-nowrap w-[10%]">Vendas</TableHead>
+                    <TableHead className="px-2 py-1.5 text-xs text-right w-[22%]">
                       <span className="hidden sm:inline">Total Vendido</span>
                       <span className="sm:hidden">Total</span>
                     </TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                    <TableHead className="px-2 py-1.5 text-xs text-right w-[22%]">
                       <span className="hidden sm:inline">Comissão Gerada</span>
                       <span className="sm:hidden">Com.</span>
                     </TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap w-[56px] md:w-[140px]">Ações</TableHead>
+                    <TableHead className="px-2 py-1.5 text-xs text-right whitespace-nowrap w-[8%]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sellerPerformance.length > 0 ? (
                     sellerPerformance.map(seller => (
                       <TableRow key={seller.id}>
-                        <TableCell className="px-2 py-2 text-xs font-medium max-w-[120px] truncate sm:max-w-[220px] md:max-w-none">
+                        <TableCell className="px-2 py-1.5 text-xs font-medium min-w-0 truncate">
                           {seller.name}
                         </TableCell>
-                        <TableCell className="px-2 py-2 text-xs text-center tabular-nums">{seller.salesCount}</TableCell>
-                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap tabular-nums">
+                        <TableCell className="px-2 py-1.5 text-xs text-center tabular-nums whitespace-nowrap">{seller.salesCount}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-xs text-right tabular-nums whitespace-normal break-words leading-tight">
                           {formatCurrency(seller.totalSold)}
                         </TableCell>
-                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap font-semibold tabular-nums">
+                        <TableCell className="px-2 py-1.5 text-xs text-right font-semibold tabular-nums whitespace-normal break-words leading-tight">
                           {formatCurrency(seller.totalCommission)}
                         </TableCell>
-                        <TableCell className="px-2 py-2 text-right whitespace-nowrap">
+                        <TableCell className="px-2 py-1.5 text-right whitespace-nowrap">
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8 md:hidden"
+                            className="h-8 w-8"
                             onClick={() => handleOpenPerformanceDetails(seller)}
                           >
                             <Eye className="h-4 w-4" />
                             <span className="sr-only">Ver vendas</span>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="hidden md:inline-flex"
-                            onClick={() => handleOpenPerformanceDetails(seller)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver Vendas
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -402,55 +393,46 @@ export default function FinanceiroPage() {
               </div>
             </div>
 
-            <div className="rounded-md border overflow-x-auto">
-              <Table>
+            <div className="rounded-md border overflow-hidden">
+              <Table className="w-full table-fixed">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="px-2 py-2 text-xs">Vendedor</TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-center whitespace-nowrap">Vendas</TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                    <TableHead className="px-2 py-1.5 text-xs w-[38%]">Vendedor</TableHead>
+                    <TableHead className="px-2 py-1.5 text-xs text-center whitespace-nowrap w-[10%]">Vendas</TableHead>
+                    <TableHead className="px-2 py-1.5 text-xs text-right w-[22%]">
                       <span className="hidden sm:inline">Total Vendido</span>
                       <span className="sm:hidden">Total</span>
                     </TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                    <TableHead className="px-2 py-1.5 text-xs text-right w-[22%]">
                       <span className="hidden sm:inline">Comissão Gerada</span>
                       <span className="sm:hidden">Com.</span>
                     </TableHead>
-                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap w-[56px] md:w-[140px]">Ações</TableHead>
+                    <TableHead className="px-2 py-1.5 text-xs text-right whitespace-nowrap w-[8%]">Ações</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sellerMonthlyPerformance.length > 0 ? (
                     sellerMonthlyPerformance.map(seller => (
                       <TableRow key={seller.id}>
-                        <TableCell className="px-2 py-2 text-xs font-medium max-w-[120px] truncate sm:max-w-[220px] md:max-w-none">
+                        <TableCell className="px-2 py-1.5 text-xs font-medium min-w-0 truncate">
                           {seller.name}
                         </TableCell>
-                        <TableCell className="px-2 py-2 text-xs text-center tabular-nums">{seller.salesCount}</TableCell>
-                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap tabular-nums">
+                        <TableCell className="px-2 py-1.5 text-xs text-center tabular-nums whitespace-nowrap">{seller.salesCount}</TableCell>
+                        <TableCell className="px-2 py-1.5 text-xs text-right tabular-nums whitespace-normal break-words leading-tight">
                           {formatCurrency(seller.totalSold)}
                         </TableCell>
-                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap font-semibold tabular-nums">
+                        <TableCell className="px-2 py-1.5 text-xs text-right font-semibold tabular-nums whitespace-normal break-words leading-tight">
                           {formatCurrency(seller.totalCommission)}
                         </TableCell>
-                        <TableCell className="px-2 py-2 text-right whitespace-nowrap">
+                        <TableCell className="px-2 py-1.5 text-right whitespace-nowrap">
                           <Button
                             variant="outline"
                             size="icon"
-                            className="h-8 w-8 md:hidden"
+                            className="h-8 w-8"
                             onClick={() => handleOpenPerformanceDetails(seller)}
                           >
                             <Eye className="h-4 w-4" />
                             <span className="sr-only">Ver vendas</span>
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="hidden md:inline-flex"
-                            onClick={() => handleOpenPerformanceDetails(seller)}
-                          >
-                            <Eye className="mr-2 h-4 w-4" />
-                            Ver Vendas
                           </Button>
                         </TableCell>
                       </TableRow>
