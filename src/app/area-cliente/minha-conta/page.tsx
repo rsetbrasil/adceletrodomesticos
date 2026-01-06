@@ -14,6 +14,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import Link from 'next/link';
+import { displayNumericCode } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -150,7 +151,7 @@ export default function MyAccountPage() {
                                                 <AccordionTrigger className="p-4 hover:no-underline rounded-t-lg data-[state=open]:bg-muted/50 data-[state=open]:rounded-b-none">
                                                     <div className="flex justify-between items-center w-full">
                                                         <div className="text-left">
-                                                            <p className="font-bold">Pedido: <span className="font-mono">{order.id}</span></p>
+                                                            <p className="font-bold">Pedido: <span className="font-mono">{displayNumericCode(order.id)}</span></p>
                                                             <p className="text-sm text-muted-foreground">{format(parseISO(order.date), "dd/MM/yyyy", { locale: ptBR })}</p>
                                                         </div>
                                                         <div className="text-right">

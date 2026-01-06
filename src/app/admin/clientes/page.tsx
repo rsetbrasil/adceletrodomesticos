@@ -478,7 +478,7 @@ export default function CustomersAdminPage() {
         const dueDate = format(parseISO(installment.dueDate), 'dd/MM/yyyy', { locale: ptBR });
         const amount = formatCurrency(installment.amount - (installment.paidAmount || 0));
         
-        const message = `Olá, ${customerName}! Passando para lembrar sobre o vencimento da sua parcela nº ${installment.installmentNumber} do seu carnê (pedido ${order.id}).
+        const message = `Olá, ${customerName}! Passando para lembrar sobre o vencimento da sua parcela nº ${installment.installmentNumber} do seu carnê (pedido ${displayNumericCode(order.id)}).
 
 Vencimento: *${dueDate}*
 Valor: *${amount}*
@@ -774,7 +774,7 @@ Não esqueça de enviar o comprovante!`;
                                     <AccordionTrigger className="p-4 hover:no-underline rounded-t-lg data-[state=open]:bg-muted/50 data-[state=open]:rounded-b-none">
                                         <div className="flex justify-between items-center w-full">
                                             <div className="text-left space-y-1">
-                                                <p className="font-bold">Pedido: <span className="font-mono">{order.id}</span></p>
+                                                <p className="font-bold">Pedido: <span className="font-mono">{displayNumericCode(order.id)}</span></p>
                                                 <p className="text-xs text-muted-foreground italic truncate max-w-xs">{productNames}</p>
                                                 <p className="text-sm text-muted-foreground">{format(new Date(order.date), "dd/MM/yyyy", { locale: ptBR })}</p>
                                             </div>

@@ -12,6 +12,7 @@ import { Printer, ArrowLeft } from 'lucide-react';
 import Logo from '@/components/Logo';
 import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { displayNumericCode } from '@/lib/utils';
 
 
 const formatCurrency = (value: number) => {
@@ -122,7 +123,7 @@ export default function CommissionReceiptPage() {
                             {relatedOrders.map(order => (
                                 <tr key={order.id} className="border-b last:border-none">
                                     <td className="p-2 whitespace-nowrap">{format(parseISO(order.date), 'dd/MM/yy')}</td>
-                                    <td className="p-2 font-mono">{order.id}</td>
+                                    <td className="p-2 font-mono">{displayNumericCode(order.id)}</td>
                                     <td className="p-2">{order.customer.name}</td>
                                     <td className="p-2 text-right">{formatCurrency(order.total)}</td>
                                     <td className="p-2 text-right font-semibold">{formatCurrency(order.commission || 0)}</td>

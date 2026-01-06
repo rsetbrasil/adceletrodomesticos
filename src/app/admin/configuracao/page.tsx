@@ -534,7 +534,7 @@ export default function ConfiguracaoPage() {
                           <div>
                               <h3 className="font-semibold mb-4 capitalize">Gerente</h3>
                                <div className="space-y-3">
-                                  {ALL_SECTIONS.map(section => (
+                                  {ALL_SECTIONS.filter(section => section.id !== 'financeiro').map(section => (
                                       <div key={`gerente-${section.id}`} className="flex items-center space-x-2">
                                           <Checkbox
                                               id={`gerente-${section.id}`}

@@ -12,7 +12,7 @@ import { format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { generatePixPayload } from '@/lib/pix';
 import PixQRCode from '@/components/PixQRCode';
-import { cn } from '@/lib/utils';
+import { cn, displayNumericCode } from '@/lib/utils';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
 import { useSettings } from '@/context/SettingsContext';
@@ -55,7 +55,7 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
 
         <div className="text-center my-2 print:my-1 print-default:my-0.5">
             <p className="font-semibold text-sm print:text-[11px] print-default:text-[10px] print-a4:text-[12px]">Pedido Nº</p>
-            <p className="font-mono text-xl print:text-[16px] print-default:text-[14px] print-a4:text-[20px]">{order.id}</p>
+            <p className="font-mono text-xl print:text-[16px] print-default:text-[14px] print-a4:text-[20px]">{displayNumericCode(order.id)}</p>
         </div>
 
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4 print:flex-row print:items-start print:gap-2 print-default:gap-1 border-t py-2 print:py-0.5 print-default:py-0.5">
@@ -66,7 +66,7 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                         <p className="font-semibold">{order.customer.name}</p>
                         {order.customer.code && (
                             <p className="text-xs print:text-[9px] print-default:text-[8px] print-a4:text-[10px] text-muted-foreground">
-                                CÓDIGO: <span className="font-semibold text-foreground">{order.customer.code}</span>
+                                CÓDIGO: <span className="font-semibold text-foreground">{displayNumericCode(order.customer.code)}</span>
                             </p>
                         )}
                     </div>
@@ -279,7 +279,7 @@ export default function CarnetPage() {
           </Button>
           <div className="text-center">
              <h1 className="text-2xl font-bold">Carnê de Pagamento</h1>
-             <p className="text-muted-foreground">Pedido: {order.id}</p>
+             <p className="text-muted-foreground">Pedido: {displayNumericCode(order.id)}</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => handlePrint('default')}>

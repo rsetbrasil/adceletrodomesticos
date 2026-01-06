@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandList, CommandItem } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Check, ChevronsUpDown, PlusCircle, ShoppingCart, Trash2, CalendarIcon, MinusCircle, FileText } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { cn, displayNumericCode } from '@/lib/utils';
 import type { CustomerInfo, User, Product, CartItem, Order, Installment } from '@/lib/types';
 import { addMonths, format, parse, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -424,7 +424,7 @@ export default function CreateOrderPage() {
                                   <Check className={cn("mr-2 h-4 w-4", customerId === field.value ? "opacity-100" : "opacity-0")} />
                                   <div className="flex flex-col items-start text-left">
                                       <span>{c.name}</span>
-                                      <span className="text-xs text-muted-foreground">{c.cpf || c.code || c.phone}</span>
+                                      <span className="text-xs text-muted-foreground">{c.cpf || (c.code ? displayNumericCode(c.code) : c.phone)}</span>
                                   </div>
                                 </CommandItem>
                                 )

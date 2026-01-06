@@ -81,7 +81,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       if (existingItem.quantity < product.stock) {
         existingItem.quantity += 1;
       } else {
-        toast({ title: "Limite de Estoque Atingido", description: `Você já tem a quantidade máxima (${product.stock}) deste item no carrinho.` });
+        toast({ title: "Limite de Estoque Atingido", description: `Você já tem a quantidade máxima (${product.stock}) deste item no carrinho.`, duration: 1000 });
         return;
       }
     } else {
@@ -115,7 +115,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
     const stockLimit = productInCatalog?.stock ?? 0;
 
     if (quantity > stockLimit) {
-      toast({ title: "Limite de Estoque Atingido", description: `A quantidade máxima para este item é ${stockLimit}.` });
+      toast({ title: "Limite de Estoque Atingido", description: `A quantidade máxima para este item é ${stockLimit}.`, duration: 1000 });
       quantity = stockLimit;
     }
 

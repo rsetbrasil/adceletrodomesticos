@@ -14,6 +14,7 @@ import Logo from '@/components/Logo';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
 import { useSettings } from '@/context/SettingsContext';
+import { displayNumericCode } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
   if (typeof value !== 'number' || isNaN(value)) return 'R$ 0,00';
@@ -60,11 +61,11 @@ const ReceiptContent = ({ order, installment, settings, via }: { order: Order; i
             <div className="grid grid-cols-2 gap-x-4 border-y border-black py-2">
                 <div className="space-y-1">
                     <p>CLIENTE: {order.customer.name.toUpperCase()}</p>
-                    {order.customer.code && <p>CÓDIGO: {order.customer.code}</p>}
+                    {order.customer.code && <p>CÓDIGO: {displayNumericCode(order.customer.code)}</p>}
                     <p>CPF: {order.customer.cpf}</p>
                     <p>TELEFONE: {order.customer.phone}</p>
                     <p>ENDEREÇO: {`${order.customer.address}, ${order.customer.number}${order.customer.complement ? `, ${order.customer.complement}` : ''}`}</p>
-                    <p>PEDIDO: {order.id}</p>
+                    <p>PEDIDO: {displayNumericCode(order.id)}</p>
                 </div>
                 <div className="space-y-1 text-right">
                     <p>PARCELA: {installment.installmentNumber}/{order.installments}</p>
@@ -238,7 +239,7 @@ export default function SingleInstallmentPage() {
 
     const customerName = order.customer.name.split(' ')[0];
     const phone = order.customer.phone.replace(/\D/g, '');
-    const message = `Olá ${customerName}, segue o extrato atualizado da sua parcela nº ${installment.installmentNumber} (pedido ${order.id}).\n\nObrigado!\n*${settings.storeName}*`;
+    const message = `Olá ${customerName}, segue o extrato atualizado da sua parcela nº ${installment.installmentNumber} (pedido ${displayNumericCode(order.id)}).\n\nObrigado!\n*${settings.storeName}*`;
     
     const webUrl = `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
     window.open(webUrl, '_blank');
@@ -272,7 +273,7 @@ export default function SingleInstallmentPage() {
             </Button>
           <div className="text-center">
              <h1 className="text-2xl font-bold">Extrato da Parcela</h1>
-             <p className="text-muted-foreground">Pedido: {order.id} / Parcela: {installment.installmentNumber}</p>
+             <p className="text-muted-foreground">Pedido: {displayNumericCode(order.id)} / Parcela: {installment.installmentNumber}</p>
           </div>
            <div className="flex gap-2">
             <Button onClick={handleGeneratePdfAndSend} className="pdf-hidden">

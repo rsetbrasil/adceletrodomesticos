@@ -421,7 +421,7 @@ export default function OrdersAdminPage() {
     updateOrderDetails(order.id, detailsToUpdate, logAction, user);
     toast({
         title: "Vendedor Atribuído!",
-        description: `O pedido #${order.id} foi atribuído a ${seller.name}.`
+        description: `O pedido #${displayNumericCode(order.id)} foi atribuído a ${seller.name}.`
     });
   };
 
@@ -490,7 +490,7 @@ export default function OrdersAdminPage() {
     const amount = formatCurrency(installment.amount - (installment.paidAmount || 0));
     const productNames = order.items.map(item => item.name).join(', ');
     
-    const message = `Olá, ${customerName}! Passando para lembrar sobre a sua parcela do carnê (pedido ${order.id}) referente a compra de *${productNames}*.
+    const message = `Olá, ${customerName}! Passando para lembrar sobre a sua parcela do carnê (pedido ${displayNumericCode(order.id)}) referente a compra de *${productNames}*.
 
 Vencimento: *${dueDate}*
 Valor: *${amount}*
@@ -862,7 +862,7 @@ Não esqueça de enviar o comprovante!`;
                                   <TableBody>
                                       {paginatedDeletedOrders.map(order => (
                                           <TableRow key={order.id}>
-                                              <TableCell className="p-2 font-medium">{order.id}</TableCell>
+                                              <TableCell className="p-2 font-medium">{displayNumericCode(order.id)}</TableCell>
                                               <TableCell className="p-2">{order.customer.name}</TableCell>
                                               <TableCell className="p-2">{format(new Date(order.date), "dd/MM/yyyy", { locale: ptBR })}</TableCell>
                                               <TableCell className="p-2 text-right">{formatCurrency(order.total)}</TableCell>
@@ -883,7 +883,7 @@ Não esqueça de enviar o comprovante!`;
                                                               <AlertDialogHeader>
                                                                   <AlertDialogTitle>Excluir Permanentemente?</AlertDialogTitle>
                                                                   <AlertDialogDescription>
-                                                                      Esta ação é irreversível e irá apagar permanentemente o pedido <span className="font-bold">{order.id}</span>. Você tem certeza?
+                                                                      Esta ação é irreversível e irá apagar permanentemente o pedido <span className="font-bold">{displayNumericCode(order.id)}</span>. Você tem certeza?
                                                                   </AlertDialogDescription>
                                                               </AlertDialogHeader>
                                                               <AlertDialogFooter>

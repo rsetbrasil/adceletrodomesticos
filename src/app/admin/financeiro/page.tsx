@@ -19,11 +19,24 @@ import Logo from '@/components/Logo';
 import { useSettings } from '@/context/SettingsContext';
 import { useAuth } from '@/context/AuthContext';
 import { useAudit } from '@/context/AuditContext';
+import { displayNumericCode } from '@/lib/utils';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };
+
+const meses = [
+  { value: 'all', label: 'Todos os meses' },
+  { value: '01', label: 'Janeiro' }, { value: '02', label: 'Fevereiro' },
+  { value: '03', label: 'Março' }, { value: '04', label: 'Abril' },
+  { value: '05', label: 'Maio' }, { value: '06', label: 'Junho' },
+  { value: '07', label: 'Julho' }, { value: '08', label: 'Agosto' },
+  { value: '09', label: 'Setembro' }, { value: '10', label: 'Outubro' },
+  { value: '11', label: 'Novembro' }, { value: '12', label: 'Dezembro' },
+];
 
 type SellerCommissionDetails = {
     id: string;
@@ -54,11 +67,39 @@ export default function FinanceiroPage() {
   const [isPerformanceDetailModalOpen, setIsPerformanceDetailModalOpen] = useState(false);
   const [selectedPerformanceSeller, setSelectedPerformanceSeller] = useState<SellerPerformanceDetails | null>(null);
   const [printTitle, setPrintTitle] = useState('');
+  const [salesReportMonth, setSalesReportMonth] = useState<string>(() => String(new Date().getMonth() + 1).padStart(2, '0'));
+  const [salesReportYear, setSalesReportYear] = useState<string>(() => String(new Date().getFullYear()));
+  const isAdmin = user?.role === 'admin';
+  const canViewDashboard = user?.role === 'admin' || user?.role === 'gerente';
+  const isDenied = !!user && !canViewDashboard;
+
+  useEffect(() => {
+    if (isDenied) {
+      router.replace('/admin');
+    }
+  }, [isDenied, router]);
   
   const deliveredOrders = useMemo(() => {
     if (!orders) return [];
     return orders.filter(o => o.status === 'Entregue').sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [orders]);
+
+  const availableYearsForSalesReport = useMemo(() => {
+    const years = new Set<string>();
+    deliveredOrders.forEach(order => {
+      const year = String(parseISO(order.date).getFullYear());
+      years.add(year);
+    });
+    const list = Array.from(years.values()).sort((a, b) => Number(b) - Number(a));
+    if (list.length === 0) return [String(new Date().getFullYear())];
+    return list;
+  }, [deliveredOrders]);
+
+  useEffect(() => {
+    if (!availableYearsForSalesReport.includes(salesReportYear)) {
+      setSalesReportYear(availableYearsForSalesReport[0]);
+    }
+  }, [availableYearsForSalesReport, salesReportYear]);
 
   const sellerPerformance = useMemo(() => {
     if (!orders || !users) return [];
@@ -84,6 +125,72 @@ export default function FinanceiroPage() {
 
     return Array.from(performanceMap.values()).sort((a, b) => b.totalSold - a.totalSold);
   }, [orders, users]);
+
+  const sellerMonthlyPerformance = useMemo(() => {
+    if (!users) return [];
+
+    const performanceMap = new Map<string, SellerPerformanceDetails>();
+    const ensureSeller = (id: string, name: string) => {
+      if (!performanceMap.has(id)) {
+        performanceMap.set(id, { id, name, salesCount: 0, totalSold: 0, totalCommission: 0, orders: [] });
+      }
+    };
+
+    users.forEach(seller => {
+      if (seller.role === 'vendedor' || seller.role === 'gerente' || seller.role === 'admin') {
+        ensureSeller(seller.id, seller.name);
+      }
+    });
+
+    const filteredOrders = deliveredOrders.filter(order => {
+      const orderDate = parseISO(order.date);
+      const yearMatches = String(orderDate.getFullYear()) === salesReportYear;
+      if (!yearMatches) return false;
+      if (salesReportMonth === 'all') return true;
+      const orderMonth = String(orderDate.getMonth() + 1).padStart(2, '0');
+      return orderMonth === salesReportMonth;
+    });
+
+    filteredOrders.forEach(order => {
+      const sellerId = order.sellerId || 'unassigned';
+      const sellerName =
+        order.sellerName ||
+        users.find(u => u.id === order.sellerId)?.name ||
+        'Sem vendedor';
+
+      ensureSeller(sellerId, sellerName);
+
+      const sellerData = performanceMap.get(sellerId)!;
+      sellerData.salesCount += 1;
+      sellerData.totalSold += order.total;
+      sellerData.totalCommission += order.commission || 0;
+      sellerData.orders.push(order);
+      performanceMap.set(sellerId, sellerData);
+    });
+
+    return Array.from(performanceMap.values())
+      .filter(s => s.salesCount > 0)
+      .sort((a, b) => b.totalSold - a.totalSold);
+  }, [deliveredOrders, salesReportMonth, salesReportYear, users]);
+
+  const salesReportMonthLabel = useMemo(() => {
+    if (salesReportMonth === 'all') return `Ano ${salesReportYear}`;
+    const label = meses.find(m => m.value === salesReportMonth)?.label || salesReportMonth;
+    return `${label}/${salesReportYear}`;
+  }, [salesReportMonth, salesReportYear]);
+
+  const sellerMonthlyTotals = useMemo(() => {
+    const totalSold = sellerMonthlyPerformance.reduce((acc, item) => acc + item.totalSold, 0);
+    const totalSales = sellerMonthlyPerformance.reduce((acc, item) => acc + item.salesCount, 0);
+    return { totalSold, totalSales };
+  }, [sellerMonthlyPerformance]);
+
+  const selectedPerformanceTotals = useMemo(() => {
+    const list = selectedPerformanceSeller?.orders ?? [];
+    const totalSold = list.reduce((acc, order) => acc + (order.total || 0), 0);
+    const totalCommission = list.reduce((acc, order) => acc + (order.commission || 0), 0);
+    return { totalSold, totalCommission, count: list.length };
+  }, [selectedPerformanceSeller]);
 
 
   const handlePayCommission = async (seller: SellerCommissionDetails) => {
@@ -164,161 +271,326 @@ export default function FinanceiroPage() {
       },
     };
 
+  if (isDenied) {
+    return (
+      <div className="flex justify-center items-center py-24">
+        <p>Acesso negado.</p>
+      </div>
+    );
+  }
+
+  const sellerPerformanceCard = (
+    <Card id="seller-performance-card">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <UsersIcon className="h-5 w-5" /> Desempenho dos Vendedores
+        </CardTitle>
+        <CardDescription>Relatórios gerais e por mês (apenas pedidos entregues).</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="geral">
+          <TabsList className="mb-4">
+            <TabsTrigger value="geral">Geral</TabsTrigger>
+            <TabsTrigger value="mensal">Por mês</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="geral">
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-2 py-2 text-xs">Vendedor</TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-center whitespace-nowrap">Vendas</TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                      <span className="hidden sm:inline">Total Vendido</span>
+                      <span className="sm:hidden">Total</span>
+                    </TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                      <span className="hidden sm:inline">Comissão Gerada</span>
+                      <span className="sm:hidden">Com.</span>
+                    </TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap w-[56px] md:w-[140px]">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sellerPerformance.length > 0 ? (
+                    sellerPerformance.map(seller => (
+                      <TableRow key={seller.id}>
+                        <TableCell className="px-2 py-2 text-xs font-medium max-w-[120px] truncate sm:max-w-[220px] md:max-w-none">
+                          {seller.name}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-xs text-center tabular-nums">{seller.salesCount}</TableCell>
+                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap tabular-nums">
+                          {formatCurrency(seller.totalSold)}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap font-semibold tabular-nums">
+                          {formatCurrency(seller.totalCommission)}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-right whitespace-nowrap">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 md:hidden"
+                            onClick={() => handleOpenPerformanceDetails(seller)}
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span className="sr-only">Ver vendas</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="hidden md:inline-flex"
+                            onClick={() => handleOpenPerformanceDetails(seller)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            Ver Vendas
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center">
+                        Nenhuma venda registrada.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="mensal">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div className="w-full sm:w-[180px]">
+                  <Select value={salesReportYear} onValueChange={setSalesReportYear}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Ano" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableYearsForSalesReport.map(year => (
+                        <SelectItem key={year} value={year}>
+                          {year}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-full sm:w-[220px]">
+                  <Select value={salesReportMonth} onValueChange={setSalesReportMonth}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Mês" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {meses.map(mes => (
+                        <SelectItem key={mes.value} value={mes.value}>
+                          {mes.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{salesReportMonthLabel}</span>
+                <span className="mx-2">•</span>
+                <span>{sellerMonthlyTotals.totalSales} vendas</span>
+                <span className="mx-2">•</span>
+                <span>{formatCurrency(sellerMonthlyTotals.totalSold)}</span>
+              </div>
+            </div>
+
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="px-2 py-2 text-xs">Vendedor</TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-center whitespace-nowrap">Vendas</TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                      <span className="hidden sm:inline">Total Vendido</span>
+                      <span className="sm:hidden">Total</span>
+                    </TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap">
+                      <span className="hidden sm:inline">Comissão Gerada</span>
+                      <span className="sm:hidden">Com.</span>
+                    </TableHead>
+                    <TableHead className="px-2 py-2 text-xs text-right whitespace-nowrap w-[56px] md:w-[140px]">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sellerMonthlyPerformance.length > 0 ? (
+                    sellerMonthlyPerformance.map(seller => (
+                      <TableRow key={seller.id}>
+                        <TableCell className="px-2 py-2 text-xs font-medium max-w-[120px] truncate sm:max-w-[220px] md:max-w-none">
+                          {seller.name}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-xs text-center tabular-nums">{seller.salesCount}</TableCell>
+                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap tabular-nums">
+                          {formatCurrency(seller.totalSold)}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-xs text-right whitespace-nowrap font-semibold tabular-nums">
+                          {formatCurrency(seller.totalCommission)}
+                        </TableCell>
+                        <TableCell className="px-2 py-2 text-right whitespace-nowrap">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            className="h-8 w-8 md:hidden"
+                            onClick={() => handleOpenPerformanceDetails(seller)}
+                          >
+                            <Eye className="h-4 w-4" />
+                            <span className="sr-only">Ver vendas</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="hidden md:inline-flex"
+                            onClick={() => handleOpenPerformanceDetails(seller)}
+                          >
+                            <Eye className="mr-2 h-4 w-4" />
+                            Ver Vendas
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
+                    <TableRow>
+                      <TableCell colSpan={5} className="h-24 text-center">
+                        Nenhuma venda entregue no período.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </TabsContent>
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className='space-y-8'>
       <div className="print-hidden">
-          <Card>
-            <CardHeader>
-                <CardTitle>Relatório Financeiro</CardTitle>
-                <CardDescription>Resumo de vendas, lucros e comissões. Use os botões para imprimir seções específicas.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-wrap gap-2">
-                <Button onClick={() => handlePrint('all')}>
+          {isAdmin && (
+            <>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Relatório Financeiro</CardTitle>
+                  <CardDescription>Resumo de vendas, lucros e comissões. Use os botões para imprimir seções específicas.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-wrap gap-2">
+                  <Button onClick={() => handlePrint('all')}>
                     <Printer className="mr-2 h-4 w-4" />
                     Imprimir Relatório Completo
-                </Button>
-                <Button variant="outline" onClick={() => handlePrint('sales')}>
+                  </Button>
+                  <Button variant="outline" onClick={() => handlePrint('sales')}>
                     <ShoppingCart className="mr-2 h-4 w-4" />
                     Apenas Vendas
-                </Button>
-                <Button variant="outline" onClick={() => handlePrint('sellers')}>
+                  </Button>
+                  <Button variant="outline" onClick={() => handlePrint('sellers')}>
                     <UsersIcon className="mr-2 h-4 w-4" />
                     Vendas por Vendedor
-                </Button>
-                <Button variant="outline" onClick={() => handlePrint('profits')}>
+                  </Button>
+                  <Button variant="outline" onClick={() => handlePrint('profits')}>
                     <TrendingUp className="mr-2 h-4 w-4" />
                     Apenas Lucros
-                </Button>
-                <Button variant="outline" onClick={() => handlePrint('commissions')}>
+                  </Button>
+                  <Button variant="outline" onClick={() => handlePrint('commissions')}>
                     <Award className="mr-2 h-4 w-4" />
                     Apenas Comissões
-                </Button>
-            </CardContent>
-          </Card>
+                  </Button>
+                </CardContent>
+              </Card>
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Vendido</CardTitle>
-                <DollarSign className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalVendido)}</div>
-                <p className="text-xs text-muted-foreground">Soma de todos os pedidos</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Lucro Bruto</CardTitle>
-                <TrendingUp className="h-4 w-4 text-emerald-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(financialSummary.lucroBruto)}</div>
-                <p className="text-xs text-muted-foreground">Receita total - Custo dos produtos</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Contas a Receber</CardTitle>
-                <Clock className="h-4 w-4 text-amber-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalPendente)}</div>
-                <p className="text-xs text-muted-foreground">Soma de todas as parcelas pendentes</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Comissões a Pagar</CardTitle>
-                <Percent className="h-4 w-4 text-blue-500" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatCurrency(commissionSummary.totalPendingCommission)}</div>
-                <p className="text-xs text-muted-foreground">Soma das comissões pendentes</p>
-              </CardContent>
-            </Card>
-          </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Total Vendido</CardTitle>
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalVendido)}</div>
+                    <p className="text-xs text-muted-foreground">Soma de todos os pedidos</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Lucro Bruto</CardTitle>
+                    <TrendingUp className="h-4 w-4 text-emerald-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(financialSummary.lucroBruto)}</div>
+                    <p className="text-xs text-muted-foreground">Receita total - Custo dos produtos</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Contas a Receber</CardTitle>
+                    <Clock className="h-4 w-4 text-amber-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(financialSummary.totalPendente)}</div>
+                    <p className="text-xs text-muted-foreground">Soma de todas as parcelas pendentes</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <CardTitle className="text-sm font-medium">Comissões a Pagar</CardTitle>
+                    <Percent className="h-4 w-4 text-blue-500" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">{formatCurrency(commissionSummary.totalPendingCommission)}</div>
+                    <p className="text-xs text-muted-foreground">Soma das comissões pendentes</p>
+                  </CardContent>
+                </Card>
+              </div>
 
-          <div className="grid gap-8 md:grid-cols-2">
-            <Card>
-                <CardHeader>
+              <div className="grid gap-8 md:grid-cols-2">
+                <Card>
+                  <CardHeader>
                     <CardTitle>Vendas Mensais</CardTitle>
-                </CardHeader>
-                <CardContent className="pl-2">
-                  <ChartContainer config={chartConfig} className="h-[350px] w-full">
-                    <ResponsiveContainer>
-                      <BarChart data={financialSummary.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid vertical={false} />
-                        <XAxis
-                          dataKey="name"
-                          tickLine={false}
-                          tickMargin={10}
-                          axisLine={false}
-                          className="capitalize"
-                        />
-                        <YAxis
-                          tickFormatter={(value) => formatCurrency(value as number)}
-                          tickLine={false}
-                          axisLine={false}
-                          width={100}
-                        />
-                        <ChartTooltip
-                          cursor={false}
-                          content={<ChartTooltipContent
-                              formatter={(value) => formatCurrency(value as number)}
-                              />}
+                  </CardHeader>
+                  <CardContent className="pl-2">
+                    <ChartContainer config={chartConfig} className="h-[350px] w-full">
+                      <ResponsiveContainer>
+                        <BarChart data={financialSummary.monthlyData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                          <CartesianGrid vertical={false} />
+                          <XAxis
+                            dataKey="name"
+                            tickLine={false}
+                            tickMargin={10}
+                            axisLine={false}
+                            className="capitalize"
                           />
-                        <Legend />
-                        <Bar dataKey="total" fill="var(--color-total)" radius={4} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </ChartContainer>
-                </CardContent>
-            </Card>
-            <Card id="seller-performance-card">
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><UsersIcon className="h-5 w-5" /> Desempenho dos Vendedores</CardTitle>
-                    <CardDescription>Resumo de vendas geral por vendedor.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                    <div className="rounded-md border">
-                        <Table>
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Vendedor</TableHead>
-                                    <TableHead className="text-center">Vendas</TableHead>
-                                    <TableHead className="text-right">Total Vendido</TableHead>
-                                    <TableHead className="text-right">Comissão Gerada</TableHead>
-                                    <TableHead className="text-right">Ações</TableHead>
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {sellerPerformance.length > 0 ? (
-                                    sellerPerformance.map(seller => (
-                                        <TableRow key={seller.id}>
-                                            <TableCell className="font-medium">{seller.name}</TableCell>
-                                            <TableCell className="text-center">{seller.salesCount}</TableCell>
-                                            <TableCell className="text-right">{formatCurrency(seller.totalSold)}</TableCell>
-                                            <TableCell className="text-right font-semibold">{formatCurrency(seller.totalCommission)}</TableCell>
-                                            <TableCell className="text-right">
-                                                 <Button variant="outline" size="sm" onClick={() => handleOpenPerformanceDetails(seller)}>
-                                                    <Eye className="mr-2 h-4 w-4" /> Ver Vendas
-                                                </Button>
-                                            </TableCell>
-                                        </TableRow>
-                                    ))
-                                ) : (
-                                    <TableRow>
-                                        <TableCell colSpan={5} className="h-24 text-center">Nenhuma venda registrada.</TableCell>
-                                    </TableRow>
-                                )}
-                            </TableBody>
-                        </Table>
-                    </div>
-                </CardContent>
-            </Card>
-          </div>
-           <Card>
+                          <YAxis
+                            tickFormatter={(value) => formatCurrency(value as number)}
+                            tickLine={false}
+                            axisLine={false}
+                            width={100}
+                          />
+                          <ChartTooltip
+                            cursor={false}
+                            content={<ChartTooltipContent formatter={(value) => formatCurrency(value as number)} />}
+                          />
+                          <Legend />
+                          <Bar dataKey="total" fill="var(--color-total)" radius={4} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </ChartContainer>
+                  </CardContent>
+                </Card>
+                {sellerPerformanceCard}
+              </div>
+            </>
+          )}
+
+          {!isAdmin && sellerPerformanceCard}
+
+          {isAdmin && (
+            <Card>
               <CardHeader>
                   <div>
                     <CardTitle className="flex items-center gap-2"><Award className="h-5 w-5" /> Comissões a Pagar</CardTitle>
@@ -369,6 +641,7 @@ export default function FinanceiroPage() {
                 </div>
               </CardContent>
             </Card>
+          )}
       </div>
 
        {/* Print-only view */}
@@ -450,7 +723,7 @@ export default function FinanceiroPage() {
                             {deliveredOrders.map(order => (
                                 <tr key={order.id} className="border-b last:border-none">
                                     <td className="p-2">{format(parseISO(order.date), 'dd/MM/yy')}</td>
-                                    <td className="p-2 font-mono">{order.id}</td>
+                                    <td className="p-2 font-mono">{displayNumericCode(order.id)}</td>
                                     <td className="p-2">{order.customer.name}</td>
                                     <td className="p-2">{order.sellerName}</td>
                                     <td className="p-2 text-right">{formatCurrency(order.total)}</td>
@@ -491,6 +764,37 @@ export default function FinanceiroPage() {
                     ))}
                 </tbody>
             </table>
+
+            <div className="mt-8">
+              <h3 className="text-lg font-semibold text-center mb-4">Vendas por Vendedor - {salesReportMonthLabel}</h3>
+              {sellerMonthlyPerformance.length > 0 ? (
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b-2">
+                      <th className="text-left p-2 font-bold">Vendedor</th>
+                      <th className="text-center p-2 font-bold">Vendas</th>
+                      <th className="text-right p-2 font-bold">Total Vendido</th>
+                      <th className="text-right p-2 font-bold">Comissão Gerada</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sellerMonthlyPerformance.map(seller => (
+                      <tr key={seller.id} className="border-b last:border-none">
+                        <td className="p-2">{seller.name}</td>
+                        <td className="text-center p-2">{seller.salesCount}</td>
+                        <td className="text-right p-2">{formatCurrency(seller.totalSold)}</td>
+                        <td className="text-right p-2 font-semibold">{formatCurrency(seller.totalCommission)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  <ShoppingCart className="mx-auto h-8 w-8" />
+                  <p className="mt-2">Nenhuma venda entregue no período.</p>
+                </div>
+              )}
+            </div>
         </div>
 
         <div className="print-section print-section-commissions mt-8">
@@ -548,7 +852,7 @@ export default function FinanceiroPage() {
                             ordersForSelectedCommissionSeller.map(order => (
                                 <TableRow key={order.id}>
                                     <TableCell>{format(parseISO(order.date), "dd/MM/yy")}</TableCell>
-                                    <TableCell className="font-mono">{order.id}</TableCell>
+                                    <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
                                     <TableCell>{order.customer.name}</TableCell>
                                     <TableCell className="text-right">{formatCurrency(order.total)}</TableCell>
                                     <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
@@ -574,7 +878,22 @@ export default function FinanceiroPage() {
                 </DialogDescription>
             </DialogHeader>
             <div id="seller-report-modal-content">
-                <div className="rounded-md border max-h-[60vh] overflow-y-auto">
+                <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded-md border px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Vendas</div>
+                    <div className="text-base font-semibold tabular-nums">{selectedPerformanceTotals.count}</div>
+                  </div>
+                  <div className="rounded-md border px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Total vendido</div>
+                    <div className="text-base font-semibold tabular-nums">{formatCurrency(selectedPerformanceTotals.totalSold)}</div>
+                  </div>
+                  <div className="rounded-md border px-3 py-2">
+                    <div className="text-xs text-muted-foreground">Total comissão</div>
+                    <div className="text-base font-semibold tabular-nums">{formatCurrency(selectedPerformanceTotals.totalCommission)}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-md border max-h-[60vh] overflow-auto seller-report-table-wrapper">
                     <Table>
                         <TableHeader>
                             <TableRow>
@@ -582,6 +901,7 @@ export default function FinanceiroPage() {
                                 <TableHead>Pedido</TableHead>
                                 <TableHead>Cliente</TableHead>
                                 <TableHead className="text-right">Valor da Venda</TableHead>
+                                <TableHead className="text-right">Comissão</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -589,14 +909,15 @@ export default function FinanceiroPage() {
                                 selectedPerformanceSeller?.orders.map(order => (
                                     <TableRow key={order.id}>
                                         <TableCell>{format(parseISO(order.date), "dd/MM/yy")}</TableCell>
-                                        <TableCell className="font-mono">{order.id}</TableCell>
+                                        <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
                                         <TableCell>{order.customer.name}</TableCell>
                                         <TableCell className="text-right font-semibold">{formatCurrency(order.total)}</TableCell>
+                                        <TableCell className="text-right tabular-nums">{formatCurrency(order.commission || 0)}</TableCell>
                                     </TableRow>
                                 ))
                             ) : (
                                 <TableRow>
-                                    <TableCell colSpan={4} className="h-24 text-center">Nenhuma venda encontrada para este vendedor.</TableCell>
+                                    <TableCell colSpan={5} className="h-24 text-center">Nenhuma venda encontrada para este vendedor.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
