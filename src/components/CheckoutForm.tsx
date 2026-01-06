@@ -479,7 +479,7 @@ export default function CheckoutForm() {
   }
 
   return (
-    <div className="grid md:grid-cols-2 gap-12">
+    <div className="grid gap-8 md:grid-cols-2 md:gap-12">
       <div>
         <h3 className="text-xl font-semibold mb-4 font-headline">Resumo do Pedido</h3>
         <div className="space-y-4">
@@ -524,7 +524,7 @@ export default function CheckoutForm() {
       </div>
       
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
           <div>
             <h3 className="text-xl font-semibold mb-4 font-headline">Informações do Cliente</h3>
             <div className="space-y-4">
