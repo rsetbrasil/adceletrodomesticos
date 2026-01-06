@@ -42,6 +42,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [usersLoaded, setUsersLoaded] = useState(false);
+  const [canValidateSession, setCanValidateSession] = useState(false);
   const router = useRouter();
   const { toast } = useToast();
   const { logAction } = useAudit();
@@ -108,6 +110,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     let usersUnsubscribe: (() => void) | null = null;
     const usersTimeoutId = window.setTimeout(() => {
       setUsers(initialUsers);
+      setUsersLoaded(true);
+      setCanValidateSession(false);
+      setIsLoading(false);
     }, 8000);
     try {
       const { db } = getClientFirebase();
@@ -116,6 +121,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         (snapshot) => {
           window.clearTimeout(usersTimeoutId);
           setUsers(snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as User)));
+          setUsersLoaded(true);
+          setCanValidateSession(true);
+          setIsLoading(false);
         },
         (error) => {
           window.clearTimeout(usersTimeoutId);
@@ -125,13 +133,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             operation: 'list',
           }));
           setUsers(initialUsers);
+          setUsersLoaded(true);
+          setCanValidateSession(false);
+          setIsLoading(false);
         }
       );
     } catch (error) {
       window.clearTimeout(usersTimeoutId);
       setUsers(initialUsers);
+      setUsersLoaded(true);
+      setCanValidateSession(false);
+      setIsLoading(false);
     }
-    setIsLoading(false);
     
     return () => {
       window.clearTimeout(usersTimeoutId);
@@ -189,7 +202,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !usersLoaded || !canValidateSession) return;
 
     const latest = users.find(u => u.id === user.id);
     if (!latest) {
@@ -228,7 +241,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     } else {
       writeStoredSession(merged);
     }
-  }, [router, toast, users, user]);
+  }, [router, toast, users, user, usersLoaded, canValidateSession]);
 
   const login = (username: string, pass: string) => {
     const foundUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());

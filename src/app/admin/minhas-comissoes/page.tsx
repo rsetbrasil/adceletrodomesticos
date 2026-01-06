@@ -646,7 +646,7 @@ export default function MyCommissionsPage() {
             </DialogDescription>
           </DialogHeader>
           <div id="seller-sales-report-modal-content">
-            <div className="rounded-md border max-h-[60vh] overflow-y-auto">
+            <div className="rounded-md border max-h-[60vh] overflow-y-auto seller-report-table-wrapper">
               <Table>
                 <TableHeader>
                   <TableRow>
