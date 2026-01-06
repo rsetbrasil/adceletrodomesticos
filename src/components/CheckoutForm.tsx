@@ -479,18 +479,18 @@ export default function CheckoutForm() {
   }
 
   return (
-    <div className="grid gap-8 md:grid-cols-2 md:gap-12">
-      <div>
-        <h3 className="text-xl font-semibold mb-4 font-headline">Resumo do Pedido</h3>
+    <div className="grid gap-8 md:grid-cols-2 md:gap-12 items-start w-full">
+      <div className="min-w-0">
+        <h3 className="text-xl font-semibold mb-4 font-headline text-center md:text-left">Resumo do Pedido</h3>
         <div className="space-y-4">
           {cartItemsWithDetails.map((item) => (
             <div key={item.id} className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-4 flex-grow">
+              <div className="flex items-center gap-4 flex-grow min-w-0">
                 <div className="relative h-16 w-16 rounded-md overflow-hidden">
                   <Image src={item.imageUrl} alt={item.name} fill className="object-cover" />
                 </div>
-                <div className="flex-grow">
-                  <p className="font-semibold">{item.name}</p>
+                <div className="flex-grow min-w-0">
+                  <p className="font-semibold break-words">{item.name}</p>
                   <p className="text-sm text-muted-foreground">Qtd: {item.quantity}</p>
                    <p className="text-xs text-accent font-semibold">(em até {item.maxInstallments}x)</p>
                    {!item.hasEnoughStock && (
@@ -524,9 +524,9 @@ export default function CheckoutForm() {
       </div>
       
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8">
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6 md:space-y-8 w-full max-w-2xl mx-auto min-w-0">
           <div>
-            <h3 className="text-xl font-semibold mb-4 font-headline">Informações do Cliente</h3>
+            <h3 className="text-xl font-semibold mb-4 font-headline text-center md:text-left">Informações do Cliente</h3>
             <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <FormField
@@ -562,10 +562,10 @@ export default function CheckoutForm() {
                     <FormField control={form.control} name="phone3" render={({ field }) => ( <FormItem><FormLabel>Telefone 3 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="email" render={({ field }) => ( <FormItem className="md:col-span-2"><FormLabel>Email (Opcional)</FormLabel><FormControl><Input placeholder="seu@email.com" {...field} /></FormControl><FormMessage /></FormItem> )} />
                 </div>
-                 <div className="p-3 bg-blue-500/10 text-blue-800 rounded-lg text-sm">
+                <div className="p-3 bg-blue-500/10 text-blue-800 rounded-lg text-sm">
                     <p><strong>Atenção:</strong> Se este for seu primeiro pedido, a senha de acesso para a Área do Cliente será os <strong>6 primeiros dígitos do seu CPF</strong>.</p>
                 </div>
-                <h4 className="text-lg font-semibold pt-4">Endereço de Entrega</h4>
+                <h4 className="text-lg font-semibold pt-4 text-center md:text-left">Endereço de Entrega</h4>
                 <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
                     <FormField control={form.control} name="zip" render={({ field }) => ( <FormItem className="md:col-span-2"><FormLabel>CEP</FormLabel><FormControl><Input placeholder="00000-000" {...field} onBlur={handleZipBlur} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="address" render={({ field }) => ( <FormItem className="md:col-span-4"><FormLabel>Endereço</FormLabel><FormControl><Input placeholder="Rua, Av." {...field} /></FormControl><FormMessage /></FormItem> )} />
@@ -591,7 +591,12 @@ export default function CheckoutForm() {
             </div>
           </div>
           
-          <Button type="submit" size="lg" className="w-full text-lg flex items-center justify-center gap-2" disabled={!isCartValid || form.formState.isSubmitting}>
+          <Button
+            type="submit"
+            size="lg"
+            className="w-full max-w-full min-w-0 flex flex-wrap items-center justify-center gap-2 whitespace-normal text-center leading-tight h-auto py-3 px-4 text-base sm:text-lg"
+            disabled={!isCartValid || form.formState.isSubmitting}
+          >
             <WhatsAppIcon />
             <span>Enviar pedido para WhatsApp</span>
           </Button>

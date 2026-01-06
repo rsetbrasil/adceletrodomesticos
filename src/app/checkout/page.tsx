@@ -9,8 +9,8 @@ import Link from 'next/link';
 export default function CheckoutPage() {
   return (
     <div className="min-h-screen bg-muted/20 overflow-x-hidden">
-      <div className="mx-auto px-3 py-4 sm:px-4 sm:py-8 max-w-5xl">
-        <Card className="w-full max-w-md md:max-w-4xl mx-auto shadow-lg">
+      <div className="mx-auto px-4 py-4 sm:px-4 sm:py-8 max-w-5xl">
+        <Card className="w-full max-w-full sm:max-w-md md:max-w-4xl mx-auto shadow-lg bg-white">
           <CardHeader className="pb-3 sm:pb-4">
             <Button variant="ghost" asChild className="w-fit mb-2">
               <Link href="/">
@@ -26,7 +26,7 @@ export default function CheckoutPage() {
             </CardDescription>
           </CardHeader>
           <Separator />
-          <CardContent className="pt-4 sm:pt-6">
+          <CardContent className="pt-4 sm:pt-6 w-full min-w-0">
             <CheckoutForm />
           </CardContent>
         </Card>
