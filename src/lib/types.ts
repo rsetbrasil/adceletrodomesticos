@@ -112,6 +112,10 @@ export type Order = {
   installments: number;
   installmentValue: number;
   date: string;
+  createdAt?: string;
+  createdByName?: string;
+  createdById?: string;
+  createdFromIp?: string;
   firstDueDate?: Date;
   status: OrderStatus;
   previousStatus?: OrderStatus;

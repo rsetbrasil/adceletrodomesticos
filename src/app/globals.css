@@ -76,6 +76,14 @@
     print-color-adjust: exact !important;
   }
 
+  body.print-layout-default {
+    zoom: 0.94;
+  }
+
+  body.print-layout-a4 {
+    zoom: 0.85;
+  }
+
   .print-container {
     padding: 1rem;
   }

@@ -29,8 +29,8 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
     const valorFinanciado = order.total;
 
     return (
-    <div className="carnet-content-wrapper bg-white break-inside-avoid print:p-0 text-sm print:text-[9px]">
-        <div className="pb-2 print:pb-1 border-b">
+    <div className="carnet-content-wrapper bg-white break-inside-avoid print:p-0 text-sm print:text-[8px] print:leading-tight print-default:text-[8px] print-default:leading-tight">
+        <div className="pb-2 print:pb-1 print-default:pb-0.5 border-b">
             <div style={{ display: 'table', width: '100%' }}>
                 <div style={{ display: 'table-row' }}>
                     <div style={{ display: 'table-cell', verticalAlign: 'middle', paddingRight: '1rem' }}>
@@ -51,12 +51,12 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
             </div>
         </div>
 
-        <div className="text-center my-2 print:my-1">
-            <p className="font-semibold print:text-[10px]">Pedido Nº</p>
-            <p className="font-mono text-lg print:text-base">{order.id}</p>
+        <div className="text-center my-2 print:my-1 print-default:my-0.5">
+            <p className="font-semibold print:text-[9px]">Pedido Nº</p>
+            <p className="font-mono text-lg print:text-sm">{order.id}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 py-2 print:py-1 border-t">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 py-2 print:gap-x-2 print:gap-y-0 print:py-0.5 print-default:py-0.5 print-default:gap-x-2 border-t">
             <div>
                 <p className="text-xs print:text-[8px] text-muted-foreground">CLIENTE</p>
                 <p className="font-semibold">{order.customer.name}</p>
@@ -93,30 +93,30 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
         </div>
         
         {order.observations && (
-            <div className="py-2 print:py-1 border-t">
+            <div className="py-2 print:py-1 print-default:py-0.5 border-t">
                 <p className="text-xs print:text-[8px] text-muted-foreground">OBSERVAÇÕES</p>
                 <p className="font-semibold whitespace-pre-line">{order.observations}</p>
             </div>
         )}
 
-        <div className="flex flex-col md:flex-row gap-4 print:flex-row print:gap-2 mt-2">
+        <div className="flex flex-col md:flex-row gap-4 print:flex-row print:gap-2 mt-2 print-default:mt-1 print-default:gap-1">
             <div className="flex-grow border rounded-md overflow-hidden">
-                <table className="w-full text-xs print:text-[9px]">
+                <table className="w-full text-xs print:text-[8px] print:leading-tight">
                     <thead className="bg-muted/50 print:bg-gray-100">
                         <tr className="border-b">
-                            <th className="p-1 text-center font-medium w-[15%]">Parc.</th>
-                            <th className="p-1 text-left font-medium w-[25%]">Venc.</th>
-                            <th className="p-1 text-right font-medium w-[25%]">Valor (R$)</th>
-                            <th className="p-1 text-left font-medium w-[35%]">Data Pag.</th>
+                            <th className="p-1 print:p-0.5 text-center font-medium w-[15%]">Parc.</th>
+                            <th className="p-1 print:p-0.5 text-left font-medium w-[25%]">Venc.</th>
+                            <th className="p-1 print:p-0.5 text-right font-medium w-[25%]">Valor (R$)</th>
+                            <th className="p-1 print:p-0.5 text-left font-medium w-[35%]">Data Pag.</th>
                         </tr>
                     </thead>
                     <tbody>
                         {(order.installmentDetails || []).map((installment) => (
                             <tr key={installment.installmentNumber} className="border-b last:border-none">
-                                <td className="p-1 text-center font-medium">{installment.installmentNumber}/{order.installments}</td>
-                                <td className="p-1">{format(parseISO(installment.dueDate), 'dd/MM/yy')}</td>
-                                <td className="p-1 text-right font-mono">{formatCurrency(installment.amount)}</td>
-                                <td className="p-1 border-l">
+                                <td className="p-1 print:p-0.5 text-center font-medium">{installment.installmentNumber}/{order.installments}</td>
+                                <td className="p-1 print:p-0.5">{format(parseISO(installment.dueDate), 'dd/MM/yy')}</td>
+                                <td className="p-1 print:p-0.5 text-right font-mono">{formatCurrency(installment.amount)}</td>
+                                <td className="p-1 print:p-0.5 border-l">
                                     {installment.status === 'Pago' 
                                         ? (installment.paymentDate ? format(parseISO(installment.paymentDate), 'dd/MM/yy') : 'Pago')
                                         : '___/__/____'
@@ -127,41 +127,41 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                     </tbody>
                      <tfoot className="bg-muted/50 print:bg-gray-100 font-bold">
                         <tr className="border-t">
-                            <td colSpan={2} className="p-1 text-right">SUBTOTAL:</td>
-                            <td className="p-1 text-right font-mono">{formatCurrency(subtotal)}</td>
-                            <td className="p-1"></td>
+                            <td colSpan={2} className="p-1 print:p-0.5 text-right">SUBTOTAL:</td>
+                            <td className="p-1 print:p-0.5 text-right font-mono">{formatCurrency(subtotal)}</td>
+                            <td className="p-1 print:p-0.5"></td>
                         </tr>
                         {(order.downPayment || 0) > 0 && (
                             <tr className="border-t">
-                                <td colSpan={2} className="p-1 text-right text-green-600">ENTRADA:</td>
-                                <td className="p-1 text-right font-mono text-green-600">- {formatCurrency(order.downPayment || 0)}</td>
-                                <td className="p-1"></td>
+                                <td colSpan={2} className="p-1 print:p-0.5 text-right text-green-600">ENTRADA:</td>
+                                <td className="p-1 print:p-0.5 text-right font-mono text-green-600">- {formatCurrency(order.downPayment || 0)}</td>
+                                <td className="p-1 print:p-0.5"></td>
                             </tr>
                         )}
                         {(order.discount || 0) > 0 && (
                             <tr className="border-t">
-                                <td colSpan={2} className="p-1 text-right text-destructive">DESCONTO:</td>
-                                <td className="p-1 text-right font-mono text-destructive">- {formatCurrency(order.discount || 0)}</td>
-                                <td className="p-1"></td>
+                                <td colSpan={2} className="p-1 print:p-0.5 text-right text-destructive">DESCONTO:</td>
+                                <td className="p-1 print:p-0.5 text-right font-mono text-destructive">- {formatCurrency(order.discount || 0)}</td>
+                                <td className="p-1 print:p-0.5"></td>
                             </tr>
                         )}
-                        <tr className="border-t text-base">
-                            <td colSpan={2} className="p-1 text-right">VALOR TOTAL:</td>
-                            <td className="p-1 text-right font-mono">{formatCurrency(valorFinanciado)}</td>
-                            <td className="p-1"></td>
+                        <tr className="border-t text-sm print:text-[9px]">
+                            <td colSpan={2} className="p-1 print:p-0.5 text-right">VALOR TOTAL:</td>
+                            <td className="p-1 print:p-0.5 text-right font-mono">{formatCurrency(valorFinanciado)}</td>
+                            <td className="p-1 print:p-0.5"></td>
                         </tr>
                     </tfoot>
                 </table>
             </div>
              {pixPayload && (
-                <div className="w-full md:w-48 flex-shrink-0 print:w-32">
+                <div className="w-full md:w-48 flex-shrink-0 print:w-32 print-default:w-24">
                     <PixQRCode payload={pixPayload} />
                 </div>
             )}
         </div>
 
 
-        <div className="mt-2 text-xs print:text-[8px] text-muted-foreground">
+        <div className="mt-2 print:mt-1 print-default:mt-1 text-xs print:text-[7px] print-default:text-[7px] print-default:leading-tight text-muted-foreground">
             <p className="font-semibold">Observações:</p>
             <p>1. O pagamento pode ser realizado na loja ou via PIX (solicite o código ao vendedor).</p>
             <p>2. Em caso de atraso, juros e multas podem ser aplicados.</p>

@@ -104,6 +104,28 @@ const isPendingCatalogOrder = (order: Order): boolean => {
   return !(hasSeller && installmentsConfiguredByAdmin);
 };
 
+const getOrderCreatorName = (order: Order, users: User[]): string => {
+  const explicit = order.createdByName?.trim();
+  if (explicit) return explicit;
+
+  const byId = order.createdById || order.sellerId;
+  if (byId) {
+    const found = users.find(u => u.id === byId)?.name?.trim();
+    if (found) return found;
+  }
+
+  if (isCatalogOrder(order)) {
+    const customerName = order.customer?.name?.trim();
+    if (customerName) return customerName;
+    return 'Cliente';
+  }
+
+  const sellerName = order.sellerName?.trim();
+  if (sellerName && sellerName !== 'Não atribuído') return sellerName;
+
+  return 'Não informado';
+};
+
 const dueDateRanges = [
     { value: 'all', label: 'Todos os Vencimentos' },
     { value: '1-5', label: '1 a 5' },
@@ -146,8 +168,13 @@ export default function OrdersAdminPage() {
   const [expandedHistory, setExpandedHistory] = useState<string | null>(null);
   const [activePage, setActivePage] = useState(1);
   const [deletedPage, setDeletedPage] = useState(1);
+  const [ordersPerPage, setOrdersPerPage] = useState<string>('20');
 
-  const ORDERS_PER_PAGE = 20;
+  const ordersPerPageCount = useMemo(() => {
+    if (ordersPerPage === 'all') return Number.POSITIVE_INFINITY;
+    const parsed = Number.parseInt(ordersPerPage, 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
+  }, [ordersPerPage]);
 
   useEffect(() => {
     setIsClient(true);
@@ -215,16 +242,24 @@ export default function OrdersAdminPage() {
 
 
   const { paginatedActiveOrders, totalActivePages } = useMemo(() => {
-    const total = Math.ceil(activeOrders.length / ORDERS_PER_PAGE);
-    const paginated = activeOrders.slice((activePage - 1) * ORDERS_PER_PAGE, activePage * ORDERS_PER_PAGE);
+    if (!Number.isFinite(ordersPerPageCount)) {
+      return { paginatedActiveOrders: activeOrders, totalActivePages: 1 };
+    }
+
+    const total = Math.ceil(activeOrders.length / ordersPerPageCount);
+    const paginated = activeOrders.slice((activePage - 1) * ordersPerPageCount, activePage * ordersPerPageCount);
     return { paginatedActiveOrders: paginated, totalActivePages: total };
-  }, [activeOrders, activePage]);
+  }, [activeOrders, activePage, ordersPerPageCount]);
 
   const { paginatedDeletedOrders, totalDeletedPages } = useMemo(() => {
-    const total = Math.ceil(deletedOrders.length / ORDERS_PER_PAGE);
-    const paginated = deletedOrders.slice((deletedPage - 1) * ORDERS_PER_PAGE, deletedPage * ORDERS_PER_PAGE);
+    if (!Number.isFinite(ordersPerPageCount)) {
+      return { paginatedDeletedOrders: deletedOrders, totalDeletedPages: 1 };
+    }
+
+    const total = Math.ceil(deletedOrders.length / ordersPerPageCount);
+    const paginated = deletedOrders.slice((deletedPage - 1) * ordersPerPageCount, deletedPage * ordersPerPageCount);
     return { paginatedDeletedOrders: paginated, totalDeletedPages: total };
-  }, [deletedOrders, deletedPage]);
+  }, [deletedOrders, deletedPage, ordersPerPageCount]);
 
   const maxAllowedInstallmentsForSelectedOrder = useMemo(() => {
     if (!selectedOrder || !products) return 10;
@@ -698,19 +733,53 @@ Não esqueça de enviar o comprovante!`;
                                   </TableBody>
                               </Table>
                           </div>
-                          {totalActivePages > 1 && (
-                              <div className="flex justify-end items-center gap-2 mt-4">
-                                  <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.max(1, p - 1))} disabled={activePage === 1}>
-                                      Anterior
-                                  </Button>
-                                  <span className="text-sm">
-                                      Página {activePage} de {totalActivePages}
-                                  </span>
-                                  <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.min(totalActivePages, p + 1))} disabled={activePage === totalActivePages}>
-                                      Próxima
-                                  </Button>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-muted-foreground">Exibir</span>
+                              <Select
+                                value={ordersPerPage}
+                                onValueChange={(value) => {
+                                  setOrdersPerPage(value);
+                                  setActivePage(1);
+                                  setDeletedPage(1);
+                                }}
+                              >
+                                <SelectTrigger className="w-[120px] h-9">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="10">10</SelectItem>
+                                  <SelectItem value="20">20</SelectItem>
+                                  <SelectItem value="40">40</SelectItem>
+                                  <SelectItem value="60">60</SelectItem>
+                                  <SelectItem value="80">80</SelectItem>
+                                  <SelectItem value="100">100</SelectItem>
+                                  <SelectItem value="all">Todos</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <span className="text-sm text-muted-foreground">pedidos</span>
+                              {Number.isFinite(ordersPerPageCount) ? (
+                                <span className="text-sm text-muted-foreground">
+                                  (página {activePage} de {totalActivePages})
+                                </span>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">
+                                  (mostrando {activeOrders.length})
+                                </span>
+                              )}
+                            </div>
+
+                            {Number.isFinite(ordersPerPageCount) && totalActivePages > 1 && (
+                              <div className="flex justify-end items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.max(1, p - 1))} disabled={activePage === 1}>
+                                  Anterior
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setActivePage(p => Math.min(totalActivePages, p + 1))} disabled={activePage === totalActivePages}>
+                                  Próxima
+                                </Button>
                               </div>
-                          )}
+                            )}
+                          </div>
                           </>
                       ) : (
                           <div className="text-center py-16 text-muted-foreground border-2 border-dashed rounded-lg">
@@ -800,19 +869,53 @@ Não esqueça de enviar o comprovante!`;
                                   </TableBody>
                               </Table>
                           </div>
-                          {totalDeletedPages > 1 && (
-                              <div className="flex justify-end items-center gap-2 mt-4">
-                                  <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.max(1, p - 1))} disabled={deletedPage === 1}>
-                                      Anterior
-                                  </Button>
-                                  <span className="text-sm">
-                                      Página {deletedPage} de {totalDeletedPages}
-                                  </span>
-                                  <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.min(totalDeletedPages, p + 1))} disabled={deletedPage === totalDeletedPages}>
-                                      Próxima
-                                  </Button>
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mt-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm text-muted-foreground">Exibir</span>
+                              <Select
+                                value={ordersPerPage}
+                                onValueChange={(value) => {
+                                  setOrdersPerPage(value);
+                                  setActivePage(1);
+                                  setDeletedPage(1);
+                                }}
+                              >
+                                <SelectTrigger className="w-[120px] h-9">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="10">10</SelectItem>
+                                  <SelectItem value="20">20</SelectItem>
+                                  <SelectItem value="40">40</SelectItem>
+                                  <SelectItem value="60">60</SelectItem>
+                                  <SelectItem value="80">80</SelectItem>
+                                  <SelectItem value="100">100</SelectItem>
+                                  <SelectItem value="all">Todos</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <span className="text-sm text-muted-foreground">pedidos</span>
+                              {Number.isFinite(ordersPerPageCount) ? (
+                                <span className="text-sm text-muted-foreground">
+                                  (página {deletedPage} de {totalDeletedPages})
+                                </span>
+                              ) : (
+                                <span className="text-sm text-muted-foreground">
+                                  (mostrando {deletedOrders.length})
+                                </span>
+                              )}
+                            </div>
+
+                            {Number.isFinite(ordersPerPageCount) && totalDeletedPages > 1 && (
+                              <div className="flex justify-end items-center gap-2">
+                                <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.max(1, p - 1))} disabled={deletedPage === 1}>
+                                  Anterior
+                                </Button>
+                                <Button variant="outline" size="sm" onClick={() => setDeletedPage(p => Math.min(totalDeletedPages, p + 1))} disabled={deletedPage === totalDeletedPages}>
+                                  Próxima
+                                </Button>
                               </div>
-                          )}
+                            )}
+                          </div>
                           </>
                       ) : (
                           <div className="text-center py-16 text-muted-foreground border-2 border-dashed rounded-lg">
@@ -988,6 +1091,18 @@ Não esqueça de enviar o comprovante!`;
                                     )}
                                 </div>
                                 {selectedOrder.isCommissionManual && <p className="text-xs text-muted-foreground text-right">Valor de comissão manual</p>}
+                            </CardContent>
+                          </Card>
+
+                          <Card>
+                            <CardHeader className="flex-row items-center gap-4 space-y-0 pb-4">
+                              <Clock className="w-8 h-8 text-primary" />
+                              <CardTitle className="text-lg">Criação</CardTitle>
+                            </CardHeader>
+                            <CardContent className="text-sm space-y-1">
+                              <p><strong>Usuário:</strong> {getOrderCreatorName(selectedOrder, users)}</p>
+                              <p><strong>Data/Hora:</strong> {format(new Date(selectedOrder.createdAt || selectedOrder.date), 'dd/MM/yy HH:mm')}</p>
+                              <p><strong>IP:</strong> {selectedOrder.createdFromIp || 'Não informado'}</p>
                             </CardContent>
                           </Card>
                       </div>

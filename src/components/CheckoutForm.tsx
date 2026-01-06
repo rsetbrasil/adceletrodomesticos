@@ -484,27 +484,35 @@ export default function CheckoutForm() {
         <h3 className="text-xl font-semibold mb-4 font-headline text-center md:text-left">Resumo do Pedido</h3>
         <div className="space-y-4">
           {cartItemsWithDetails.map((item) => (
-            <div key={item.id} className="flex items-start justify-between gap-2">
-              <div className="flex items-center gap-4 flex-grow min-w-0">
-                <div className="relative h-16 w-16 rounded-md overflow-hidden">
+            <div key={item.id} className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-4 min-w-0">
+                <div className="relative h-16 w-16 rounded-md overflow-hidden flex-shrink-0">
                   <Image src={item.imageUrl} alt={item.name} fill className="object-cover" />
                 </div>
-                <div className="flex-grow min-w-0">
-                  <p className="font-semibold break-words">{item.name}</p>
-                  <p className="text-sm text-muted-foreground">Qtd: {item.quantity}</p>
-                   <p className="text-xs text-accent font-semibold">(em até {item.maxInstallments}x)</p>
-                   {!item.hasEnoughStock && (
-                      <div className="flex items-center gap-1 text-xs text-destructive mt-1">
-                          <AlertTriangle className="h-3 w-3" />
-                          <span>Estoque: {item.stock}. Ajuste a quantidade.</span>
-                      </div>
+                <div className="min-w-0">
+                  <p className="font-semibold break-words leading-tight">{item.name}</p>
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
+                    <span>Qtd: {item.quantity}</span>
+                    <span className="text-xs text-accent font-semibold">(em até {item.maxInstallments}x)</span>
+                  </div>
+                  {!item.hasEnoughStock && (
+                    <div className="flex items-center gap-1 text-xs text-destructive mt-2">
+                      <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                      <span className="break-words">Estoque: {item.stock}. Ajuste a quantidade.</span>
+                    </div>
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <p className="font-semibold">{formatCurrency(item.price * item.quantity)}</p>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => removeFromCart(item.id)}>
-                    <Trash2 className="h-4 w-4" />
+
+              <div className="flex items-center justify-between gap-2 sm:justify-end">
+                <p className="font-semibold whitespace-nowrap">{formatCurrency(item.price * item.quantity)}</p>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive flex-shrink-0"
+                  onClick={() => removeFromCart(item.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -514,12 +522,17 @@ export default function CheckoutForm() {
             <span>Total</span>
             <span>{formatCurrency(total)}</span>
           </div>
-           <div className="mt-4 p-4 bg-muted rounded-lg text-center">
-              <p className="font-bold text-md text-accent flex items-center justify-center gap-2"><CreditCard /> Pagamento via Crediário</p>
-              <p className="text-sm text-muted-foreground mt-1">
-                O vendedor definirá as condições de parcelamento com você após a finalização do pedido.
-              </p>
+          <div className="mt-4 rounded-lg border bg-muted/40 p-4">
+            <div className="flex items-start gap-3">
+              <CreditCard className="h-5 w-5 text-accent mt-0.5 flex-shrink-0" />
+              <div className="min-w-0">
+                <p className="font-semibold text-accent leading-tight">Pagamento via Crediário</p>
+                <p className="text-sm text-muted-foreground mt-1 leading-snug">
+                  O vendedor definirá as condições de parcelamento com você após a finalização do pedido.
+                </p>
+              </div>
             </div>
+          </div>
         </div>
       </div>
       

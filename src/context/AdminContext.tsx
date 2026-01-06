@@ -177,15 +177,34 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     if (!db) return;
     const unsubscribes: (() => void)[] = [];
 
-    const setupListener = (collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>, orderField = 'createdAt') => {
+    const normalizeOrderAuditFields = (raw: any): Order => {
+        const order = raw as Order;
+
+        const createdAt = order.createdAt || order.date || new Date().toISOString();
+        const createdByName =
+          order.createdByName ||
+          (order.source === 'catalogo' ? (order.customer?.name || 'Cliente') : undefined) ||
+          order.sellerName ||
+          'Não informado';
+        const createdById = order.createdById || order.sellerId;
+
+        return { ...order, createdAt, createdByName, createdById };
+    };
+
+    const setupListener = (
+      collectionName: string,
+      setter: React.Dispatch<React.SetStateAction<any[]>>,
+      orderField = 'createdAt',
+      mapper?: (doc: any) => any,
+    ) => {
         const q = query(collection(db, collectionName), orderBy(orderField, 'desc'));
         const unsubscribe = onSnapshot(q, (snapshot) => {
-            setter(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+            setter(snapshot.docs.map(d => (mapper ? mapper(d) : ({ ...d.data(), id: d.id }))));
         }, (error) => console.error(`Error fetching ${collectionName}:`, error));
         unsubscribes.push(unsubscribe);
     };
 
-    setupListener('orders', setOrders, 'date');
+    setupListener('orders', setOrders, 'date', (d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
     setupListener('commissionPayments', setCommissionPayments, 'paymentDate');
     setupListener('stockAudits', setStockAudits);
     setupListener('avarias', setAvarias);
@@ -864,12 +883,38 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
+    let createdFromIp = order.createdFromIp;
+    if (!createdFromIp) {
+      try {
+        const response = await fetch('/api/ip', { cache: 'no-store' });
+        if (response.ok) {
+          const data = (await response.json()) as { ip?: unknown };
+          if (typeof data.ip === 'string' && data.ip.trim()) {
+            createdFromIp = data.ip.trim();
+          }
+        }
+      } catch {
+      }
+    }
+
+    const createdAt = order.createdAt || order.date || new Date().toISOString();
+    const createdByName =
+      order.createdByName ||
+      user?.name ||
+      (order.source === 'catalogo' ? order.customer?.name : undefined) ||
+      'Sistema';
+    const createdById = order.createdById || user?.id;
+
     const orderToSave = {
         ...order,
         id: orderId,
         customer: customerToSave || order.customer,
         sellerId: order.sellerId || user?.id || '',
         sellerName: order.sellerName || user?.name || 'Não atribuído',
+        createdAt,
+        createdByName,
+        createdById,
+        createdFromIp,
         commissionPaid: false,
     } as Order;
 

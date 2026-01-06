@@ -58,12 +58,12 @@ export default function PixQRCode({ payload }: PixQRCodeProps) {
     };
   }, [payload]);
 
-  if (!payload) return null;
+  if (!payload) return null
 
   return (
-    <div className="flex flex-col items-center gap-2 p-2 border rounded-lg bg-muted/50">
-        <div className="flex items-center gap-2 font-semibold text-sm">
-            <QrCode className="h-4 w-4 text-primary"/>
+    <div className="flex flex-col items-center gap-2 p-2 border rounded-lg bg-muted/50 print:gap-1 print:p-1 print-default:gap-1 print-default:p-1">
+        <div className="flex items-center gap-2 font-semibold text-sm print:text-[8px] print:gap-1 print-default:text-[8px] print-default:gap-1">
+            <QrCode className="h-4 w-4 text-primary print:h-3 print:w-3"/>
             <span>Pague com PIX</span>
         </div>
       {qrCodeUrl ? (
