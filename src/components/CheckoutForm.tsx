@@ -34,6 +34,7 @@ import { ToastAction } from '@/components/ui/toast';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
+import { displayNumericCode } from '@/lib/utils';
 
 function isValidCPF(cpf: string) {
     if (typeof cpf !== 'string') return false;
@@ -430,22 +431,63 @@ export default function CheckoutForm() {
                 whatsappOpened = true;
           } else if (settings.storePhone) {
               const storePhone = settings.storePhone.replace(/\D/g, '');
-              const productNames = cartItemsWithDetails.map(item => item.name).join(', ');
-              const productLines = cartItemsWithDetails
-                .map((item) => `- ${item.name} (Cód: ${item.code || item.id}) x${item.quantity}`)
-                .join('\n');
+              const productLines = cartItemsWithDetails.flatMap((item) => {
+                const productCode = item.code || item.id;
+                const unitPrice = item.price;
+                const subtotal = item.price * item.quantity;
+
+                return [
+                  `*${item.name}* (Cód.: ${productCode})`,
+                  `Valor: *${formatCurrency(unitPrice)}*`,
+                  `Quantidade: *${item.quantity} un*`,
+                  `Subtotal: *${formatCurrency(subtotal)}*`,
+                  '',
+                ];
+              });
+
+              if (productLines.length > 0) {
+                productLines.pop();
+              }
+
+              const customerPhones: string[] = [];
+              if (values.phone) customerPhones.push(values.phone);
+              if (values.phone2) customerPhones.push(values.phone2);
+              if (values.phone3) customerPhones.push(values.phone3);
+              const customerPhonesText = customerPhones.filter(Boolean).join(' / ');
+              const customerCode = displayNumericCode(savedOrder.customer.code || '-');
+              const orderObservation = values.observations?.trim() ? values.observations.trim() : '-';
+              const addressLine1 = `CEP: *${values.zip}*`;
+              const addressLine2 = values.address;
+              const addressLine3 = `N° ${values.number}${values.complement?.trim() ? ` (${values.complement.trim()})` : ''}`;
+              const addressLine4 = `${values.neighborhood} - ${values.city}/${values.state}`;
+              const orderId = displayNumericCode(savedOrder.id);
               
               const messageParts = [
-                  `*Novo Pedido Recebido pelo Catálogo Online!*`,
-                  `*Pedido:* ${savedOrder.id}`,
-                  `*Cliente:* ${values.name}`,
-                  `*Cód. Cliente:* ${savedOrder.customer.code || '-'}`,
-                  `*Origem:* Catálogo Online`,
-                  `*Produtos:* ${productNames}`,
-                  `*Cód. Produtos:*`,
-                  productLines,
-                  `*Total:* ${formatCurrency(total)}`,
-                  `*Parcelamento Máximo:* Até ${maxAllowedInstallments}x`
+                  `Olá, realizei uma compra com o código *${orderId}*.`,
+                  '',
+                  `Cód. Cliente: *${customerCode}*`,
+                  '',
+                  '*Produtos:*',
+                  '',
+                  ...productLines,
+                  '',
+                  `Total do(s) produto(s): *${formatCurrency(total)}*`,
+                  `Observação: ${orderObservation}`,
+                  `Frete: Entregue`,
+                  `Valor Frete: Valor a combinar com o vendedor`,
+                  `Total da compra: *${formatCurrency(total)}*`,
+                  `Forma de pagamento na entrega: Crediário.`,
+                  '',
+                  '---------------------------',
+                  values.name,
+                  customerPhonesText,
+                  `CPF/CNPJ: *${values.cpf}*`,
+                  `Cód. Cliente: *${customerCode}*`,
+                  '*Meu endereço é:*',
+                  addressLine1,
+                  addressLine2,
+                  addressLine3,
+                  addressLine4,
               ];
 
               const message = messageParts.join('\n');

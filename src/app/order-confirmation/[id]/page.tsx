@@ -19,6 +19,7 @@ import PixQRCode from '@/components/PixQRCode';
 import { format } from 'date-fns';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
+import { displayNumericCode } from '@/lib/utils';
 
 
 const formatCurrency = (value: number) => {
@@ -103,7 +104,7 @@ export default function OrderConfirmationPage() {
           <CardDescription className="text-lg">
             Obrigado pela sua compra, {order.customer.name.split(' ')[0]}!
           </CardDescription>
-          <p className="font-semibold text-muted-foreground">Número do Pedido: <Badge variant="secondary">{order.id}</Badge></p>
+          <p className="font-semibold text-muted-foreground">Número do Pedido: <Badge variant="secondary">{displayNumericCode(order.id)}</Badge></p>
         </CardHeader>
         <CardContent className="p-6 md:p-8">
           <div className="grid md:grid-cols-2 gap-8">
