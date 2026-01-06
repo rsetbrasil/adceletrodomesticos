@@ -1,7 +1,7 @@
 
 
 
-import type { UserRole, AppSection, RolePermissions } from './types';
+import type { User, UserRole, AppSection, RolePermissions } from './types';
 
 export const ALL_SECTIONS: { id: AppSection, label: string }[] = [
     { id: 'pedidos', label: 'Pedidos' },
@@ -65,4 +65,13 @@ export function hasAccess(role: UserRole, section: AppSection, permissions: Role
         return false;
     }
     return rolePermissions.includes(section);
+}
+
+export function hasUserAccess(user: User, section: AppSection, permissions: RolePermissions): boolean {
+    if (user.role === 'admin') return true;
+    const roleAllows = hasAccess(user.role, section, permissions);
+    if (!roleAllows) return false;
+    if (!user.customPermissionsEnabled) return true;
+    if (!user.customPermissions) return false;
+    return user.customPermissions.includes(section);
 }

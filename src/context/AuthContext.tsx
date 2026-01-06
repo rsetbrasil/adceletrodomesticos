@@ -188,6 +188,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   }, []);
 
+  useEffect(() => {
+    if (!user) return;
+
+    const latest = users.find(u => u.id === user.id);
+    if (!latest) {
+      clearLogoutTimeout();
+      setUser(null);
+      clearStoredSession();
+      toast({ title: 'Sessão encerrada', description: 'Seu usuário foi removido ou desativado.' });
+      router.replace('/login');
+      return;
+    }
+
+    const merged: User = { ...user, ...latest };
+    delete merged.password;
+
+    const prevCustomEnabled = !!user.customPermissionsEnabled;
+    const nextCustomEnabled = !!merged.customPermissionsEnabled;
+    const prevCustom = ((user.customPermissions || []) as string[]).slice().sort();
+    const nextCustom = ((merged.customPermissions || []) as string[]).slice().sort();
+    const sameCustom =
+      prevCustom.length === nextCustom.length &&
+      prevCustom.every((v, i) => v === nextCustom[i]);
+
+    const isSame =
+      user.name === merged.name &&
+      user.username === merged.username &&
+      user.role === merged.role &&
+      prevCustomEnabled === nextCustomEnabled &&
+      sameCustom;
+
+    if (isSame) return;
+
+    setUser(merged);
+    const currentSession = readStoredSession();
+    if (currentSession) {
+      writeStoredSession(merged, currentSession.expiresAt);
+    } else {
+      writeStoredSession(merged);
+    }
+  }, [router, toast, users, user]);
+
   const login = (username: string, pass: string) => {
     const foundUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
 

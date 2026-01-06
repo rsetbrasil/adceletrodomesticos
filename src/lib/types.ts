@@ -143,12 +143,30 @@ export type CommissionPayment = {
 
 export type UserRole = 'admin' | 'gerente' | 'vendedor';
 
+export type AppSection = 
+    | 'pedidos' 
+    | 'criar-pedido'
+    | 'clientes' 
+    | 'produtos' 
+    | 'categorias' 
+    | 'financeiro'
+    | 'minhas-comissoes'
+    | 'auditoria'
+    | 'configuracao'
+    | 'usuarios'
+    | 'avarias'
+    | 'atendimento';
+
+export type RolePermissions = Record<UserRole, AppSection[]>;
+
 export type User = {
   id: string;
   username: string;
   password?: string; 
   name: string;
   role: UserRole;
+  customPermissionsEnabled?: boolean;
+  customPermissions?: AppSection[];
 };
 
 export type Category = {
@@ -167,22 +185,6 @@ export type AuditLog = {
   action: string;
   details: string;
 };
-
-export type AppSection = 
-    | 'pedidos' 
-    | 'criar-pedido'
-    | 'clientes' 
-    | 'produtos' 
-    | 'categorias' 
-    | 'financeiro'
-    | 'minhas-comissoes'
-    | 'auditoria'
-    | 'configuracao'
-    | 'usuarios'
-    | 'avarias'
-    | 'atendimento';
-
-export type RolePermissions = Record<UserRole, AppSection[]>;
 
 export type StockAuditProduct = {
     productId: string;

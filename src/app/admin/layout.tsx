@@ -8,7 +8,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { LogOut, Shield, Store, KeyRound, ChevronDown, Clock, Moon, Sun, Menu } from 'lucide-react';
 import AdminNav from "@/components/AdminNav";
 import { Button } from "@/components/ui/button";
-import { hasAccess } from "@/lib/permissions";
+import { hasUserAccess } from "@/lib/permissions";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/context/PermissionsContext";
 import Link from "next/link";
@@ -142,7 +142,7 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
                 .filter(([path]) => pathname.startsWith(path))
                 .sort((a,b) => b[0].length - a[0].length)[0]?.[1];
             
-            if (currentSection && !hasAccess(user.role, currentSection, permissions)) {
+            if (currentSection && !hasUserAccess(user, currentSection, permissions)) {
                 toast({
                     title: "Acesso Negado",
                     description: "Você não tem permissão para acessar esta página.",

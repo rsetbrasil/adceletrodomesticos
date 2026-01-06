@@ -1,8 +1,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { usePermissions } from '@/context/PermissionsContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -10,16 +11,15 @@ import { PlusCircle, Edit, Users, KeyRound, Trash2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
-import type { User, UserRole } from '@/lib/types';
+import type { User, UserRole, AppSection } from '@/lib/types';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { ALL_SECTIONS } from '@/lib/permissions';
 
 const userEditFormSchema = z.object({
     name: z.string().min(3, 'O nome é obrigatório.'),
@@ -27,6 +27,8 @@ const userEditFormSchema = z.object({
     role: z.enum(['admin', 'gerente', 'vendedor'], { required_error: 'O perfil é obrigatório.' }),
     password: z.string().optional(),
     confirmPassword: z.string().optional(),
+    customPermissionsEnabled: z.boolean().optional(),
+    customPermissions: z.array(z.string()).optional(),
   }).refine(data => {
     if (data.password && data.password.length < 6) {
         return false;
@@ -54,8 +56,7 @@ const userCreateFormSchema = z.object({
 
 export default function ManageUsersPage() {
     const { user: currentUser, users, updateUser, addUser, deleteUser, isLoading: isAuthLoading } = useAuth();
-    const { toast } = useToast();
-    const router = useRouter();
+    const { permissions, isLoading: permissionsLoading } = usePermissions();
 
     const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
     const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
@@ -83,7 +84,9 @@ export default function ManageUsersPage() {
             username: user.username,
             role: user.role,
             password: '', 
-            confirmPassword: '' 
+            confirmPassword: '',
+            customPermissionsEnabled: user.customPermissionsEnabled ?? false,
+            customPermissions: user.customPermissions ?? [],
         });
         setIsEditDialogOpen(true);
     };
@@ -98,6 +101,13 @@ export default function ManageUsersPage() {
          };
         if (values.password) {
             dataToUpdate.password = values.password;
+        }
+        if (values.role !== 'admin') {
+            dataToUpdate.customPermissionsEnabled = !!values.customPermissionsEnabled;
+            dataToUpdate.customPermissions = (values.customPermissions || []) as AppSection[];
+        } else {
+            dataToUpdate.customPermissionsEnabled = false;
+            dataToUpdate.customPermissions = [];
         }
 
         await updateUser(userToEdit.id, dataToUpdate);
@@ -114,7 +124,7 @@ export default function ManageUsersPage() {
         }
     }
     
-    if (isAuthLoading) {
+    if (isAuthLoading || permissionsLoading) {
         return (
             <div className="flex justify-center items-center py-24">
                 <p>Verificando permissões...</p>
@@ -337,6 +347,77 @@ export default function ManageUsersPage() {
                                     )}
                                 />
                             </div>
+
+                            <div className="space-y-3 pt-4 border-t">
+                                <div className="flex items-start justify-between gap-4">
+                                    <div>
+                                        <p className="text-sm font-medium">Permissões do Usuário</p>
+                                        <p className="text-xs text-muted-foreground">Marque o que este usuário pode ver no painel.</p>
+                                    </div>
+                                    <FormField
+                                        control={editForm.control}
+                                        name="customPermissionsEnabled"
+                                        render={({ field }) => (
+                                            <FormItem className="flex items-center gap-2 space-y-0">
+                                                <FormControl>
+                                                    <Switch
+                                                        checked={!!field.value}
+                                                        onCheckedChange={field.onChange}
+                                                        disabled={editForm.getValues('role') === 'admin'}
+                                                    />
+                                                </FormControl>
+                                                <FormLabel className="text-xs">Personalizar</FormLabel>
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
+
+                                {editForm.getValues('role') === 'admin' ? (
+                                    <p className="text-xs text-muted-foreground">Admin sempre tem acesso total.</p>
+                                ) : editForm.watch('customPermissionsEnabled') ? (
+                                    <FormField
+                                        control={editForm.control}
+                                        name="customPermissions"
+                                        render={({ field }) => {
+                                            const role = editForm.getValues('role') as UserRole;
+                                            const roleAllowed = (permissions?.[role] || []) as AppSection[];
+                                            const selected = Array.isArray(field.value) ? (field.value as AppSection[]) : [];
+
+                                            return (
+                                                <div className="grid grid-cols-1 gap-2">
+                                                    {ALL_SECTIONS.map(section => {
+                                                        const enabledForRole = roleAllowed.includes(section.id);
+                                                        const checked = selected.includes(section.id);
+
+                                                        return (
+                                                            <div
+                                                                key={section.id}
+                                                                className={`flex items-center justify-between rounded-md border px-3 py-2 ${enabledForRole ? '' : 'opacity-50'}`}
+                                                            >
+                                                                <span className="text-sm">{section.label}</span>
+                                                                <Switch
+                                                                    checked={checked}
+                                                                    disabled={!enabledForRole}
+                                                                    onCheckedChange={(nextChecked) => {
+                                                                        if (!enabledForRole) return;
+                                                                        const next = nextChecked
+                                                                            ? Array.from(new Set([...selected, section.id]))
+                                                                            : selected.filter(s => s !== section.id);
+                                                                        field.onChange(next);
+                                                                    }}
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            );
+                                        }}
+                                    />
+                                ) : (
+                                    <p className="text-xs text-muted-foreground">Desative para usar o perfil padrão do usuário.</p>
+                                )}
+                            </div>
+
                             <div className="space-y-2 pt-4 border-t">
                                  <p className="text-sm font-medium text-muted-foreground flex items-center gap-2"><KeyRound className="h-4 w-4" /> Alterar Senha (Opcional)</p>
                                 <FormField
