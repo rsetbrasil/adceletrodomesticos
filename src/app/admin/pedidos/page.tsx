@@ -618,7 +618,7 @@ Não esqueça de enviar o comprovante!`;
                                                       </span>
                                                       {isCatalogOrder(order) && (
                                                         <span className="text-[10px] font-semibold text-emerald-700">
-                                                          Catálogo online em {format(new Date(order.date), 'dd/MM/yy HH:mm')}
+                                                          Catálogo {format(new Date(order.date), 'dd/MM/yy HH:mm')}
                                                         </span>
                                                       )}
                                                     </div>
