@@ -97,6 +97,13 @@ const isCatalogOrder = (order: Order): boolean => {
   return !order.source && !hasSellerId && looksUnassigned;
 };
 
+const isPendingCatalogOrder = (order: Order): boolean => {
+  if (!isCatalogOrder(order)) return false;
+  const hasSeller = !!order.sellerId;
+  const installmentsConfiguredByAdmin = order.installments > 1;
+  return !(hasSeller && installmentsConfiguredByAdmin);
+};
+
 const dueDateRanges = [
     { value: 'all', label: 'Todos os Vencimentos' },
     { value: '1-5', label: '1 a 5' },
@@ -617,8 +624,16 @@ Não esqueça de enviar o comprovante!`;
                                                         {order.sellerName || 'Não atribuído'}
                                                       </span>
                                                       {isCatalogOrder(order) && (
-                                                        <span className="text-[10px] font-semibold text-emerald-700">
-                                                          Catálogo {format(new Date(order.date), 'dd/MM/yy HH:mm')}
+                                                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700">
+                                                          {isPendingCatalogOrder(order) && (
+                                                            <span className="relative flex h-2 w-2">
+                                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                                                              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                                            </span>
+                                                          )}
+                                                          <span>
+                                                            Catálogo {format(new Date(order.date), 'dd/MM/yy HH:mm')}
+                                                          </span>
                                                         </span>
                                                       )}
                                                     </div>
