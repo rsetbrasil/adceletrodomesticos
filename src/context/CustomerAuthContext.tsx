@@ -1,12 +1,21 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import type { CustomerInfo, Order } from '@/lib/types';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const CUSTOMER_SESSION_STORAGE_KEY = 'customerSession';
+const LEGACY_CUSTOMER_STORAGE_KEY = 'customer';
+
+type StoredCustomerSession = {
+  customer: CustomerInfo;
+  expiresAt: number;
+};
 
 interface CustomerAuthContextType {
   customer: CustomerInfo | null;
@@ -25,19 +34,106 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const { toast } = useToast();
+  const logoutTimeoutRef = useRef<number | null>(null);
+
+  const clearLogoutTimeout = () => {
+    if (logoutTimeoutRef.current) {
+      window.clearTimeout(logoutTimeoutRef.current);
+      logoutTimeoutRef.current = null;
+    }
+  };
+
+  const clearStoredSession = () => {
+    localStorage.removeItem(CUSTOMER_SESSION_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_CUSTOMER_STORAGE_KEY);
+  };
+
+  const scheduleLogoutAt = (expiresAt: number) => {
+    clearLogoutTimeout();
+    const delay = Math.max(0, expiresAt - Date.now());
+    logoutTimeoutRef.current = window.setTimeout(() => {
+      setCustomer(null);
+      clearStoredSession();
+      toast({ title: 'Sessão expirada', description: 'Faça login novamente.' });
+      router.replace('/area-cliente/login');
+    }, delay);
+  };
+
+  const readStoredSession = (): StoredCustomerSession | null => {
+    try {
+      const raw = localStorage.getItem(CUSTOMER_SESSION_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as StoredCustomerSession;
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (!parsed.customer || typeof parsed.expiresAt !== 'number') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeStoredSession = (customerToStore: CustomerInfo, expiresAt?: number) => {
+    const session: StoredCustomerSession = {
+      customer: customerToStore,
+      expiresAt: expiresAt ?? Date.now() + SESSION_TTL_MS,
+    };
+    localStorage.setItem(CUSTOMER_SESSION_STORAGE_KEY, JSON.stringify(session));
+    localStorage.removeItem(LEGACY_CUSTOMER_STORAGE_KEY);
+    scheduleLogoutAt(session.expiresAt);
+    return session;
+  };
   
   useEffect(() => {
     setIsLoading(true);
+    setIsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== CUSTOMER_SESSION_STORAGE_KEY && e.key !== LEGACY_CUSTOMER_STORAGE_KEY) return;
+      const session = readStoredSession();
+      if (!session) {
+        clearLogoutTimeout();
+        setCustomer(null);
+        return;
+      }
+      if (Date.now() >= session.expiresAt) {
+        clearLogoutTimeout();
+        setCustomer(null);
+        clearStoredSession();
+        return;
+      }
+      setCustomer(session.customer);
+      scheduleLogoutAt(session.expiresAt);
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
     try {
-        const storedCustomer = localStorage.getItem('customer');
-        if (storedCustomer) {
-            setCustomer(JSON.parse(storedCustomer));
+      const session = readStoredSession();
+      if (session) {
+        if (Date.now() >= session.expiresAt) {
+          setCustomer(null);
+          clearStoredSession();
+          clearLogoutTimeout();
+          return;
         }
-    } catch (error) {
-        console.error("Failed to read customer from localStorage", error);
-        localStorage.removeItem('customer');
-    } finally {
-        setIsLoading(false);
+        setCustomer(session.customer);
+        scheduleLogoutAt(session.expiresAt);
+        return;
+      }
+
+      const legacy = localStorage.getItem(LEGACY_CUSTOMER_STORAGE_KEY);
+      if (!legacy) return;
+      const legacyCustomer = JSON.parse(legacy) as CustomerInfo;
+      setCustomer(legacyCustomer);
+      writeStoredSession(legacyCustomer);
+    } catch {
+      setCustomer(null);
+      clearStoredSession();
+      clearLogoutTimeout();
     }
   }, []);
 
@@ -131,7 +227,7 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
             delete customerToStore.password;
             
             setCustomer(customerToStore); 
-            localStorage.setItem('customer', JSON.stringify(customerToStore));
+            writeStoredSession(customerToStore);
             router.push('/area-cliente/minha-conta');
             toast({
                 title: 'Login bem-sucedido!',
@@ -155,8 +251,9 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const logout = () => {
+    clearLogoutTimeout();
     setCustomer(null);
-    localStorage.removeItem('customer');
+    clearStoredSession();
     router.push('/area-cliente/login');
   };
 

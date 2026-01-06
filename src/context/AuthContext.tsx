@@ -1,7 +1,7 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import type { User, UserRole } from '@/lib/types';
@@ -11,6 +11,15 @@ import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, query, where, 
 import { useAudit } from './AuditContext';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { errorEmitter } from '@/firebase/error-emitter';
+
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const AUTH_SESSION_STORAGE_KEY = 'authSession';
+const LEGACY_USER_STORAGE_KEY = 'user';
+
+type StoredAuthSession = {
+  user: User;
+  expiresAt: number;
+};
 
 interface AuthContextType {
   user: User | null;
@@ -36,7 +45,64 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const router = useRouter();
   const { toast } = useToast();
   const { logAction } = useAudit();
+  const logoutTimeoutRef = useRef<number | null>(null);
+  const userRef = useRef<User | null>(null);
+
+  const clearLogoutTimeout = () => {
+    if (logoutTimeoutRef.current) {
+      window.clearTimeout(logoutTimeoutRef.current);
+      logoutTimeoutRef.current = null;
+    }
+  };
+
+  const clearStoredSession = () => {
+    localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    localStorage.removeItem(LEGACY_USER_STORAGE_KEY);
+  };
+
+  const scheduleLogoutAt = (expiresAt: number) => {
+    clearLogoutTimeout();
+    const delay = Math.max(0, expiresAt - Date.now());
+    logoutTimeoutRef.current = window.setTimeout(() => {
+      const currentUser = userRef.current;
+      if (currentUser) {
+        logAction('Logout', `Sessão expirada para "${currentUser.name}".`, currentUser);
+      }
+      setUser(null);
+      clearStoredSession();
+      toast({ title: 'Sessão expirada', description: 'Faça login novamente.' });
+      router.replace('/login');
+    }, delay);
+  };
+
+  const readStoredSession = (): StoredAuthSession | null => {
+    try {
+      const raw = localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as StoredAuthSession;
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (!parsed.user || typeof parsed.expiresAt !== 'number') return null;
+      return parsed;
+    } catch {
+      return null;
+    }
+  };
+
+  const writeStoredSession = (userToStore: User, expiresAt?: number) => {
+    const session: StoredAuthSession = {
+      user: userToStore,
+      expiresAt: expiresAt ?? Date.now() + SESSION_TTL_MS,
+    };
+    localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
+    localStorage.removeItem(LEGACY_USER_STORAGE_KEY);
+    scheduleLogoutAt(session.expiresAt);
+    return session;
+  };
   
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
   useEffect(() => {
     setIsLoading(true);
     let usersUnsubscribe: (() => void) | null = null;
@@ -65,23 +131,61 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       window.clearTimeout(usersTimeoutId);
       setUsers(initialUsers);
     }
-    
-    try {
-        const storedUser = localStorage.getItem('user');
-        if (storedUser) {
-            setUser(JSON.parse(storedUser));
-        }
-    } catch (error) {
-        console.error("Failed to read user from localStorage", error);
-        localStorage.removeItem('user');
-    } finally {
-        setIsLoading(false);
-    }
+    setIsLoading(false);
     
     return () => {
       window.clearTimeout(usersTimeoutId);
       usersUnsubscribe?.();
     };
+  }, []);
+
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key !== AUTH_SESSION_STORAGE_KEY && e.key !== LEGACY_USER_STORAGE_KEY) return;
+      const session = readStoredSession();
+      if (!session) {
+        clearLogoutTimeout();
+        setUser(null);
+        return;
+      }
+      if (Date.now() >= session.expiresAt) {
+        clearLogoutTimeout();
+        setUser(null);
+        clearStoredSession();
+        return;
+      }
+      setUser(session.user);
+      scheduleLogoutAt(session.expiresAt);
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const session = readStoredSession();
+      if (session) {
+        if (Date.now() >= session.expiresAt) {
+          setUser(null);
+          clearStoredSession();
+          clearLogoutTimeout();
+          return;
+        }
+        setUser(session.user);
+        scheduleLogoutAt(session.expiresAt);
+        return;
+      }
+
+      const legacy = localStorage.getItem(LEGACY_USER_STORAGE_KEY);
+      if (!legacy) return;
+      const legacyUser = JSON.parse(legacy) as User;
+      setUser(legacyUser);
+      writeStoredSession(legacyUser);
+    } catch {
+      setUser(null);
+      clearStoredSession();
+      clearLogoutTimeout();
+    }
   }, []);
 
   const login = (username: string, pass: string) => {
@@ -99,7 +203,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         delete userToStore.password;
         
         setUser(userToStore); 
-        localStorage.setItem('user', JSON.stringify(userToStore));
+        writeStoredSession(userToStore);
         logAction('Login', `Usuário "${foundUser.name}" realizou login.`, userToStore);
         router.push('/admin');
         toast({
@@ -119,8 +223,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (user) {
         logAction('Logout', `Usuário "${user.name}" realizou logout.`, user);
     }
+    clearLogoutTimeout();
     setUser(null);
-    localStorage.removeItem('user');
+    clearStoredSession();
     router.push('/login');
   };
 
@@ -203,7 +308,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             const updatedCurrentUser = { ...user, ...data };
             delete updatedCurrentUser.password;
             setUser(updatedCurrentUser);
-            localStorage.setItem('user', JSON.stringify(updatedCurrentUser));
+            const currentSession = readStoredSession();
+            if (currentSession) {
+              writeStoredSession(updatedCurrentUser, currentSession.expiresAt);
+            } else {
+              writeStoredSession(updatedCurrentUser);
+            }
         }
 
         toast({
