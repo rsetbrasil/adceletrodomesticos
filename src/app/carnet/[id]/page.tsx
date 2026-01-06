@@ -44,7 +44,9 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                     </div>
                      <div style={{ display: 'table-cell', width: '30%', verticalAlign: 'middle', textAlign: 'right' }}>
                         {settings.storePhone && (
-                            <p className="text-muted-foreground flex items-center gap-1 justify-end"><Phone className="h-3 w-3" /> WhatsApp: {settings.storePhone}</p>
+                            <p className="text-foreground flex items-center gap-1 justify-end font-semibold text-sm print:text-[11px] print-default:text-[11px] print-a4:text-[13px]">
+                                <Phone className="h-4 w-4 print:h-3 print:w-3" /> WhatsApp: {settings.storePhone}
+                            </p>
                         )}
                     </div>
                 </div>
@@ -52,11 +54,11 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
         </div>
 
         <div className="text-center my-2 print:my-1 print-default:my-0.5">
-            <p className="font-semibold print:text-[10px] print-default:text-[9px] print-a4:text-[11px]">Pedido Nº</p>
-            <p className="font-mono text-lg print:text-[14px] print-default:text-[12px] print-a4:text-[16px]">{order.id}</p>
+            <p className="font-semibold text-sm print:text-[11px] print-default:text-[10px] print-a4:text-[12px]">Pedido Nº</p>
+            <p className="font-mono text-xl print:text-[16px] print-default:text-[14px] print-a4:text-[20px]">{order.id}</p>
         </div>
 
-        <div className="flex flex-col gap-3 print:flex-row print:items-start print:gap-2 print-default:gap-1 border-t py-2 print:py-0.5 print-default:py-0.5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4 print:flex-row print:items-start print:gap-2 print-default:gap-1 border-t py-2 print:py-0.5 print-default:py-0.5">
             <div className="flex-grow min-w-0">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 print:gap-x-2 print:gap-y-0 print-default:gap-x-2">
                     <div>
@@ -116,8 +118,8 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                         <tr className="border-b">
                             <th className="p-1 print:p-0.5 text-center font-medium w-[15%]">Parc.</th>
                             <th className="p-1 print:p-0.5 text-left font-medium w-[25%]">Venc.</th>
-                            <th className="p-1 print:p-0.5 text-right font-medium w-[25%]">Valor (R$)</th>
-                            <th className="p-1 print:p-0.5 text-left font-medium w-[35%]">Data Pag.</th>
+                            <th className="p-1 print:p-0.5 text-right font-medium w-[30%]">Valor (R$)</th>
+                            <th className="p-1 print:p-0.5 text-center font-medium w-[30%]">Data Pag.</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -126,7 +128,7 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                                 <td className="p-1 print:p-0.5 text-center font-medium">{installment.installmentNumber}/{order.installments}</td>
                                 <td className="p-1 print:p-0.5">{format(parseISO(installment.dueDate), 'dd/MM/yy')}</td>
                                 <td className="p-1 print:p-0.5 text-right font-mono">{formatCurrency(installment.amount)}</td>
-                                <td className="p-1 print:p-0.5 border-l">
+                                <td className="p-1 print:p-0.5 border-l text-center font-mono">
                                     {installment.status === 'Pago' 
                                         ? (installment.paymentDate ? format(parseISO(installment.paymentDate), 'dd/MM/yy') : 'Pago')
                                         : '___/__/____'
