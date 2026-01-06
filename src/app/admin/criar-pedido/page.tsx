@@ -306,6 +306,11 @@ export default function CreateOrderPage() {
   }, [totalFinanced, installmentsCount, firstDueDate]);
   
   async function onSubmit(values: CreateOrderFormValues) {
+    if (!user) {
+        toast({ title: 'Erro', description: 'Usuário não logado.', variant: 'destructive'});
+        return;
+    }
+
     const customer = activeCustomers.find(c => getCustomerKey(c) === values.customerId);
     const seller = users.find(u => u.id === values.sellerId);
     

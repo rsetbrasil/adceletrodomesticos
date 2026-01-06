@@ -184,9 +184,8 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         const createdByName =
           order.createdByName ||
           (order.source === 'catalogo' ? (order.customer?.name || 'Cliente') : undefined) ||
-          order.sellerName ||
-          'Não informado';
-        const createdById = order.createdById || order.sellerId;
+          undefined;
+        const createdById = order.createdById;
 
         return { ...order, createdAt, createdByName, createdById };
     };
@@ -825,6 +824,10 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   const addOrder = async (order: Partial<Order> & { firstDueDate: Date }, logAction: LogAction, user: User | null): Promise<Order | null> => {
     const { db } = getClientFirebase();
+    if (!user && order.source !== 'catalogo') {
+      throw new Error('Usuário não logado.');
+    }
+
     const ordersCollection = collection(db, 'orders');
     const ordersSnapshot = await getDocs(query(ordersCollection));
     const allOrders = ordersSnapshot.docs.map(d => d.data() as Order);

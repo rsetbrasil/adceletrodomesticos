@@ -5,7 +5,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useAdmin, useAdminData } from '@/context/AdminContext';
-import type { Order, Installment, PaymentMethod, User, Payment, Product } from '@/lib/types';
+import type { AuditLog, Order, Installment, PaymentMethod, User, Payment, Product } from '@/lib/types';
 import { useAuth } from '@/context/AuthContext';
 import {
   Table,
@@ -108,22 +108,34 @@ const getOrderCreatorName = (order: Order, users: User[]): string => {
   const explicit = order.createdByName?.trim();
   if (explicit) return explicit;
 
-  const byId = order.createdById || order.sellerId;
+  const byId = order.createdById;
   if (byId) {
     const found = users.find(u => u.id === byId)?.name?.trim();
     if (found) return found;
   }
 
-  if (isCatalogOrder(order)) {
-    const customerName = order.customer?.name?.trim();
-    if (customerName) return customerName;
-    return 'Cliente';
-  }
-
-  const sellerName = order.sellerName?.trim();
-  if (sellerName && sellerName !== 'Não atribuído') return sellerName;
-
+  if (isCatalogOrder(order)) return 'Cliente (catálogo)';
   return 'Não informado';
+};
+
+const getCreatorFromAuditLogs = (orderId: string, auditLogs: AuditLog[]): string | null => {
+  if (!orderId) return null;
+  const token = `#${orderId}`;
+
+  const match = auditLogs
+    .filter((log) => log.action === 'Criação de Pedido' && typeof log.details === 'string' && log.details.includes(token))
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))[0];
+
+  const name = match?.userName?.trim();
+  return name ? name : null;
+};
+
+const getOrderCreatorDisplayName = (order: Order, users: User[], auditLogs: AuditLog[]): string => {
+  const base = getOrderCreatorName(order, users);
+  if (base && base !== 'Não informado') return base;
+
+  const fromAudit = getCreatorFromAuditLogs(order.id, auditLogs);
+  return fromAudit || base;
 };
 
 const dueDateRanges = [
@@ -142,9 +154,10 @@ export default function OrdersAdminPage() {
   const { products } = useData();
   const { user, users } = useAuth();
   const { settings } = useSettings();
-  const { logAction } = useAudit();
+  const { logAction, auditLogs } = useAudit();
   const { toast } = useToast();
   const [isClient, setIsClient] = useState(false);
+  const [currentIp, setCurrentIp] = useState<string | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [installmentsInput, setInstallmentsInput] = useState(1);
@@ -178,6 +191,25 @@ export default function OrdersAdminPage() {
 
   useEffect(() => {
     setIsClient(true);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/ip', { cache: 'no-store' })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return response.json() as Promise<{ ip?: unknown }>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        const ip = typeof data?.ip === 'string' ? data.ip.trim() : '';
+        if (ip) setCurrentIp(ip);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const sellers = useMemo(() => {
@@ -1100,9 +1132,13 @@ Não esqueça de enviar o comprovante!`;
                               <CardTitle className="text-lg">Criação</CardTitle>
                             </CardHeader>
                             <CardContent className="text-sm space-y-1">
-                              <p><strong>Usuário:</strong> {getOrderCreatorName(selectedOrder, users)}</p>
+                              <p><strong>Criado por:</strong> {getOrderCreatorDisplayName(selectedOrder, users, auditLogs)}</p>
                               <p><strong>Data/Hora:</strong> {format(new Date(selectedOrder.createdAt || selectedOrder.date), 'dd/MM/yy HH:mm')}</p>
-                              <p><strong>IP:</strong> {selectedOrder.createdFromIp || 'Não informado'}</p>
+                              <p><strong>IP:</strong> {selectedOrder.createdFromIp?.trim()
+                                ? selectedOrder.createdFromIp.trim()
+                                : currentIp?.trim()
+                                  ? `Não registrado (IP atual: ${currentIp.trim()})`
+                                  : 'Não registrado'}</p>
                             </CardContent>
                           </Card>
                       </div>

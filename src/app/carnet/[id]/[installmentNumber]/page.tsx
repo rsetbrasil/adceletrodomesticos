@@ -163,12 +163,10 @@ export default function SingleInstallmentPage() {
       .then((orderDoc) => {
         if (orderDoc.exists()) {
           setOrder({ id: orderDoc.id, ...orderDoc.data() } as Order);
-        } else {
-          console.error("No such order!");
         }
       })
       .catch(error => {
-        console.error("Error fetching document:", error);
+        setOrder(null);
       })
       .finally(() => {
         setIsOrderLoading(false);

@@ -1,0 +1,36 @@
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 6mm;
+  }
+
+  body.print-layout-default .carnet-content-wrapper {
+    font-size: 10px !important;
+    line-height: 1.15 !important;
+  }
+
+  body.print-layout-a4 .carnet-content-wrapper {
+    font-size: 12px !important;
+    line-height: 1.15 !important;
+  }
+
+  body.print-layout-default .carnet-table thead th:nth-child(-n + 3),
+  body.print-layout-default .carnet-table tbody td:nth-child(-n + 3) {
+    font-size: 12px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.print-layout-a4 .carnet-table thead th:nth-child(-n + 3),
+  body.print-layout-a4 .carnet-table tbody td:nth-child(-n + 3) {
+    font-size: 14px !important;
+    line-height: 1.1 !important;
+  }
+
+  body.print-layout-default .carnet-pix {
+    font-size: 10px !important;
+  }
+
+  body.print-layout-a4 .carnet-pix {
+    font-size: 12px !important;
+  }
+}

@@ -1,5 +1,6 @@
 
 import type { Metadata } from 'next';
+import './print.css';
 
 export const metadata: Metadata = {
   title: 'Carnê de Pagamento - ADC Móveis',

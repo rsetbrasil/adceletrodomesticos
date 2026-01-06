@@ -77,11 +77,11 @@
   }
 
   body.print-layout-default {
-    zoom: 0.94;
+    zoom: 1;
   }
 
   body.print-layout-a4 {
-    zoom: 0.85;
+    zoom: 1;
   }
 
   .print-container {
