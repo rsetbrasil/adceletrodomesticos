@@ -33,6 +33,7 @@ import { Textarea } from './ui/textarea';
 import { ToastAction } from '@/components/ui/toast';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
+import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 
 function isValidCPF(cpf: string) {
     if (typeof cpf !== 'string') return false;
@@ -590,8 +591,9 @@ export default function CheckoutForm() {
             </div>
           </div>
           
-          <Button type="submit" size="lg" className="w-full text-lg" disabled={!isCartValid || form.formState.isSubmitting}>
-            Finalizar Compra
+          <Button type="submit" size="lg" className="w-full text-lg flex items-center justify-center gap-2" disabled={!isCartValid || form.formState.isSubmitting}>
+            <WhatsAppIcon />
+            <span>Enviar pedido para WhatsApp</span>
           </Button>
         </form>
       </Form>
