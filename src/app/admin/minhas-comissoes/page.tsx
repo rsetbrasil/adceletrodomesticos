@@ -173,6 +173,13 @@ export default function MyCommissionsPage() {
     return { totalSold, totalSales, totalCommission };
   }, [sellerSalesReport]);
 
+  const selectedSellerTotals = useMemo(() => {
+    const list = selectedSellerReport?.orders ?? [];
+    const totalSold = list.reduce((acc, order) => acc + (order.total || 0), 0);
+    const totalCommission = list.reduce((acc, order) => acc + (order.commission || 0), 0);
+    return { count: list.length, totalSold, totalCommission };
+  }, [selectedSellerReport]);
+
   const handleOpenSellerReport = (seller: SellerSalesReport) => {
     setSelectedSellerReport(seller);
     setIsSellerReportOpen(true);
@@ -584,6 +591,8 @@ export default function MyCommissionsPage() {
                             <span>{sellerReportTotals.totalSales} vendas</span>
                             <span className="mx-2">•</span>
                             <span>{formatCurrency(sellerReportTotals.totalSold)}</span>
+                            <span className="mx-2">•</span>
+                            <span>{formatCurrency(sellerReportTotals.totalCommission)} comissão</span>
                           </div>
                         </div>
 
@@ -646,6 +655,20 @@ export default function MyCommissionsPage() {
             </DialogDescription>
           </DialogHeader>
           <div id="seller-sales-report-modal-content">
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div className="rounded-md border px-3 py-2">
+                <div className="text-xs text-muted-foreground">Vendas</div>
+                <div className="text-base font-semibold tabular-nums">{selectedSellerTotals.count}</div>
+              </div>
+              <div className="rounded-md border px-3 py-2">
+                <div className="text-xs text-muted-foreground">Total vendido</div>
+                <div className="text-base font-semibold tabular-nums">{formatCurrency(selectedSellerTotals.totalSold)}</div>
+              </div>
+              <div className="rounded-md border px-3 py-2">
+                <div className="text-xs text-muted-foreground">Total comissão</div>
+                <div className="text-base font-semibold tabular-nums">{formatCurrency(selectedSellerTotals.totalCommission)}</div>
+              </div>
+            </div>
             <div className="rounded-md border max-h-[60vh] overflow-y-auto seller-report-table-wrapper">
               <Table>
                 <TableHeader>
