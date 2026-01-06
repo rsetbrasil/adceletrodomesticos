@@ -140,6 +140,7 @@ export default function CheckoutForm() {
       const productInfo = products.find(p => p.id === item.id);
       return {
         ...item,
+        code: productInfo?.code,
         stock: productInfo?.stock ?? 0,
         hasEnoughStock: (productInfo?.stock ?? 0) >= item.quantity,
         maxInstallments: productInfo?.maxInstallments ?? 1,
@@ -430,13 +431,19 @@ export default function CheckoutForm() {
           } else if (settings.storePhone) {
               const storePhone = settings.storePhone.replace(/\D/g, '');
               const productNames = cartItemsWithDetails.map(item => item.name).join(', ');
+              const productLines = cartItemsWithDetails
+                .map((item) => `- ${item.name} (Cód: ${item.code || item.id}) x${item.quantity}`)
+                .join('\n');
               
               const messageParts = [
                   `*Novo Pedido Recebido pelo Catálogo Online!*`,
                   `*Pedido:* ${savedOrder.id}`,
                   `*Cliente:* ${values.name}`,
+                  `*Cód. Cliente:* ${savedOrder.customer.code || '-'}`,
                   `*Origem:* Catálogo Online`,
                   `*Produtos:* ${productNames}`,
+                  `*Cód. Produtos:*`,
+                  productLines,
                   `*Total:* ${formatCurrency(total)}`,
                   `*Parcelamento Máximo:* Até ${maxAllowedInstallments}x`
               ];
