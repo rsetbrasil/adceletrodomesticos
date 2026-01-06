@@ -106,6 +106,7 @@ export default function CheckoutForm() {
   const { toast } = useToast();
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [blockedCpf, setBlockedCpf] = useState<string | null>(null);
+  const [lastCpfSearched, setLastCpfSearched] = useState<string | null>(null);
   
   const form = useForm<z.infer<typeof checkoutSchema>>({
     resolver: zodResolver(checkoutSchema),
@@ -527,7 +528,33 @@ export default function CheckoutForm() {
             <h3 className="text-xl font-semibold mb-4 font-headline">Informações do Cliente</h3>
             <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <FormField control={form.control} name="cpf" render={({ field }) => ( <FormItem><FormLabel>CPF</FormLabel><FormControl><Input placeholder="000.000.000-00" inputMode="numeric" {...field} onChange={(e) => { const formatted = formatCpf(e.target.value); field.onChange(formatted); const normalized = formatted.replace(/\D/g, ''); if (normalized.length === 11) { void handleCpfBlurCheck(formatted); } }} maxLength={14} /></FormControl><FormMessage /></FormItem> )} />
+                    <FormField
+                      control={form.control}
+                      name="cpf"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>CPF</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="000.000.000-00"
+                              inputMode="numeric"
+                              {...field}
+                              onChange={(e) => {
+                                const formatted = formatCpf(e.target.value);
+                                field.onChange(formatted);
+                                const normalized = formatted.replace(/\D/g, '');
+                                if (normalized.length === 11 && normalized !== lastCpfSearched) {
+                                  setLastCpfSearched(normalized);
+                                  void handleCpfBlurCheck(formatted);
+                                }
+                              }}
+                              maxLength={14}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     <FormField control={form.control} name="name" render={({ field }) => ( <FormItem><FormLabel>Nome Completo</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="phone" render={({ field }) => ( <FormItem><FormLabel>Telefone (WhatsApp)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="phone2" render={({ field }) => ( <FormItem><FormLabel>Telefone 2 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
