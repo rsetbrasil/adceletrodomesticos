@@ -32,11 +32,11 @@ import { Switch } from '@/components/ui/switch';
 import { useData } from '@/context/DataContext';
 
 const settingsSchema = z.object({
-  storeName: z.string().min(3, 'O nome da loja é obrigatório.'),
-  storeAddress: z.string().min(10, 'O endereço da loja é obrigatório.'),
-  storeCity: z.string().min(3, 'A cidade da loja é obrigatória.'),
-  pixKey: z.string().min(1, 'A chave PIX é obrigatória.'),
-  storePhone: z.string().min(10, 'O telefone da loja é obrigatório.'),
+  storeName: z.string().trim().min(1, 'O nome da loja é obrigatório.').max(1000),
+  storeAddress: z.string().trim().min(1, 'O endereço da loja é obrigatório.').max(1000),
+  storeCity: z.string().trim().min(1, 'A cidade da loja é obrigatória.').max(1000),
+  pixKey: z.string().trim().min(1, 'A chave PIX é obrigatória.').max(1000),
+  storePhone: z.string().trim().min(1, 'O telefone da loja é obrigatório.').max(1000),
   logoUrl: z.string().optional(),
   accessControlEnabled: z.boolean().optional(),
   commercialHourStart: z.string().optional(),
