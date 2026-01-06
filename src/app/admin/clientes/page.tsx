@@ -22,7 +22,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { cn } from '@/lib/utils';
+import { cn, displayNumericCode, extractDigits } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
 import PaymentDialog from '@/components/PaymentDialog';
@@ -147,12 +147,20 @@ export default function CustomersAdminPage() {
     const codeFromQuery = searchParams.get('code');
     if (customers.length > 0) {
       const normalizedCpfFromQuery = cpfFromQuery?.replace(/\D/g, '');
-      const normalizedCodeFromQuery = codeFromQuery?.trim().toLowerCase();
+      const normalizedCodeFromQuery = codeFromQuery?.trim() || '';
+      const normalizedCodeLowerFromQuery = normalizedCodeFromQuery.toLowerCase();
+      const normalizedCodeDigitsFromQuery = extractDigits(normalizedCodeFromQuery);
 
       const customerToSelect = normalizedCpfFromQuery
         ? customers.find(c => c.cpf && c.cpf.replace(/\D/g, '') === normalizedCpfFromQuery)
         : normalizedCodeFromQuery
-          ? customers.find(c => c.code && c.code.toLowerCase() === normalizedCodeFromQuery)
+          ? customers.find(c => {
+              const code = c.code?.trim() || '';
+              if (!code) return false;
+              if (code.toLowerCase() === normalizedCodeLowerFromQuery) return true;
+              if (!normalizedCodeDigitsFromQuery) return false;
+              return extractDigits(code) === normalizedCodeDigitsFromQuery;
+            })
           : undefined;
 
       if (customerToSelect) {
@@ -184,10 +192,12 @@ export default function CustomersAdminPage() {
     if (!searchQuery) return tabCustomers;
 
     const lowercasedQuery = searchQuery.toLowerCase();
+    const digitsQuery = extractDigits(searchQuery);
     return tabCustomers.filter(customer =>
         customer.name.toLowerCase().includes(lowercasedQuery) ||
         (customer.cpf && customer.cpf.replace(/\D/g, '').includes(lowercasedQuery)) ||
-        (customer.code && customer.code.toLowerCase().includes(lowercasedQuery))
+        (customer.code && customer.code.toLowerCase().includes(lowercasedQuery)) ||
+        (digitsQuery && customer.code && extractDigits(customer.code).includes(digitsQuery))
     );
   }, [customers, searchQuery, activeTab]);
   
@@ -576,7 +586,7 @@ Não esqueça de enviar o comprovante!`;
                         </div>
                         <div>
                             <p className="font-semibold">{customer.name}</p>
-                            <p className="text-xs text-muted-foreground">{customer.cpf || customer.code || customer.phone}</p>
+                            <p className="text-xs text-muted-foreground">{customer.cpf || (customer.code ? displayNumericCode(customer.code) : customer.phone)}</p>
                         </div>
                     </div>
                     </Button>
@@ -694,7 +704,7 @@ Não esqueça de enviar o comprovante!`;
                             <div className="flex items-center gap-2">
                                 <KeyRound className="h-4 w-4 text-muted-foreground" />
                                 <strong className="text-muted-foreground font-mono text-xs">Código</strong>
-                                <span>{selectedCustomer.code}</span>
+                                <span>{displayNumericCode(selectedCustomer.code)}</span>
                             </div>
                         )}
                         <div className="flex items-start col-span-full gap-2 mt-2">
