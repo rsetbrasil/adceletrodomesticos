@@ -252,7 +252,6 @@ export default function ConfiguracaoPage() {
         case 'resetAll':
             await resetAllAdminData(logAction, user);
             await restoreUsers(initialUsers);
-            await resetSettings();
             await resetPermissions();
             toast({ title: "Loja Resetada!", description: "Todos os dados foram restaurados para o padrão." });
             break;
