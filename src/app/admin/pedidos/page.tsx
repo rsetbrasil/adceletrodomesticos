@@ -54,7 +54,7 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { useSettings } from '@/context/SettingsContext';
 import Logo from '@/components/Logo';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
+import { cn, displayNumericCode } from '@/lib/utils';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
@@ -662,7 +662,7 @@ Não esqueça de enviar o comprovante!`;
                                           
                                           return (
                                               <TableRow key={order.id} className="text-sm">
-                                                  <TableCell className="p-2 font-medium font-mono text-xs">{order.id}</TableCell>
+                                                  <TableCell className="p-2 font-medium font-mono text-xs">{displayNumericCode(order.id)}</TableCell>
                                                   <TableCell className="p-2 whitespace-nowrap">{format(new Date(order.date), "dd/MM/yy HH:mm")}</TableCell>
                                                   <TableCell className="p-2">
                                                     <div className="flex items-center gap-2">
@@ -1000,7 +1000,7 @@ Não esqueça de enviar o comprovante!`;
                         <tr key={order.id} className="border-b last:border-none">
                             <td className="p-2">{order.customer.name}</td>
                             <td className="p-2">{order.customer.phone}</td>
-                            <td className="p-2 font-mono">{order.id}</td>
+                            <td className="p-2 font-mono">{displayNumericCode(order.id)}</td>
                             <td className="p-2">
                                 {overdueInstallment.installmentNumber} (Venc. {format(parseISO(overdueInstallment.dueDate), 'dd/MM/yy')})
                             </td>
@@ -1023,7 +1023,7 @@ Não esqueça de enviar o comprovante!`;
               {selectedOrder && (
                   <>
                   <DialogHeader>
-                      <DialogTitle>Pedido: {selectedOrder.id}</DialogTitle>
+                      <DialogTitle>Pedido: {displayNumericCode(selectedOrder.id)}</DialogTitle>
                       <CardDescription>
                           Gerencie o status, faturamento e detalhes do pedido.
                       </CardDescription>
@@ -1042,7 +1042,7 @@ Não esqueça de enviar o comprovante!`;
                                   </p>
                                 )}
                                 <p><strong>Nome:</strong> {selectedOrder.customer.name}</p>
-                                {selectedOrder.customer.code && <p><strong>Código:</strong> {selectedOrder.customer.code}</p>}
+                                {selectedOrder.customer.code && <p><strong>Código:</strong> {displayNumericCode(selectedOrder.customer.code)}</p>}
                                 <p><strong>CPF:</strong> {selectedOrder.customer.cpf}</p>
                                 <p><strong>Telefone:</strong> {selectedOrder.customer.phone}</p>
                                 <p><strong>Endereço:</strong> {`${selectedOrder.customer.address}, ${selectedOrder.customer.city}`}</p>
