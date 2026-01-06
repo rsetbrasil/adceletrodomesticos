@@ -453,6 +453,7 @@ export default function CustomersAdminPage() {
       installmentDetails: [],
       sellerId: user.id,
       sellerName: user.name,
+      source: 'admin',
     };
 
     await addOrder(newCustomerOrder, logAction, user);

@@ -89,6 +89,14 @@ const getStatusVariant = (status: Order['status']): 'secondary' | 'default' | 'o
   }
 };
 
+const isCatalogOrder = (order: Order): boolean => {
+  if (order.source === 'catalogo') return true;
+  const hasSellerId = !!order.sellerId;
+  const sellerName = order.sellerName?.toLowerCase() || '';
+  const looksUnassigned = !sellerName || sellerName.includes('atribuid');
+  return !order.source && !hasSellerId && looksUnassigned;
+};
+
 const dueDateRanges = [
     { value: 'all', label: 'Todos os Vencimentos' },
     { value: '1-5', label: '1 a 5' },
@@ -603,7 +611,18 @@ Não esqueça de enviar o comprovante!`;
                                                     </div>
                                                   </TableCell>
                                                   <TableCell className="p-2 text-xs truncate max-w-[150px]">{order.items.map(item => item.name).join(', ')}</TableCell>
-                                                  <TableCell className="p-2 truncate max-w-[120px]">{order.sellerName}</TableCell>
+                                                  <TableCell className="p-2 truncate max-w-[120px]">
+                                                    <div className="flex flex-col">
+                                                      <span className="truncate max-w-[120px]">
+                                                        {order.sellerName || 'Não atribuído'}
+                                                      </span>
+                                                      {isCatalogOrder(order) && (
+                                                        <span className="text-[10px] font-semibold text-emerald-700">
+                                                          Catálogo online em {format(new Date(order.date), 'dd/MM/yy HH:mm')}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                  </TableCell>
                                                   <TableCell className={cn("p-2 whitespace-nowrap", isOverdue && "text-destructive font-semibold")}>
                                                       {nextPendingInstallment ? format(new Date(nextPendingInstallment.dueDate), 'dd/MM/yy') : '-'}
                                                   </TableCell>
@@ -867,6 +886,11 @@ Não esqueça de enviar o comprovante!`;
                                 <CardTitle className="text-lg">Cliente</CardTitle>
                             </CardHeader>
                             <CardContent className="text-sm space-y-1">
+                                {selectedOrder && isCatalogOrder(selectedOrder) && (
+                                  <p className="text-xs font-semibold text-emerald-700">
+                                    Pedido realizado pelo cliente pelo catálogo online em {format(new Date(selectedOrder.date), 'dd/MM/yy HH:mm')}
+                                  </p>
+                                )}
                                 <p><strong>Nome:</strong> {selectedOrder.customer.name}</p>
                                 {selectedOrder.customer.code && <p><strong>Código:</strong> {selectedOrder.customer.code}</p>}
                                 <p><strong>CPF:</strong> {selectedOrder.customer.cpf}</p>

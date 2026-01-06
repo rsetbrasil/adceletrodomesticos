@@ -270,6 +270,65 @@ export default function CheckoutForm() {
     return isBlocked;
   };
 
+  const autoFillCustomerFromCpf = async (cpfRaw: string) => {
+    const normalizedCpf = cpfRaw.replace(/\D/g, '');
+    if (!normalizedCpf || normalizedCpf.length !== 11) {
+      return;
+    }
+    if (!isValidCPF(normalizedCpf)) {
+      return;
+    }
+
+    let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
+    try {
+      ({ db } = getClientFirebase());
+    } catch {
+      return;
+    }
+    if (!db) {
+      return;
+    }
+
+    const ordersRef = collection(db, 'orders');
+    const q = query(ordersRef, where('customer.cpf', '==', normalizedCpf), limit(25));
+    const snapshot = await getDocs(q);
+
+    const orders = snapshot.docs
+      .map(d => d.data() as Order)
+      .filter(o => !o.customer?.isDeleted);
+
+    if (orders.length === 0) {
+      return;
+    }
+
+    const latestOrder = orders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    const customer = latestOrder.customer;
+
+    if (!customer) {
+      return;
+    }
+
+    form.setValue('name', customer.name || '');
+    form.setValue('cpf', formatCpf(customer.cpf || normalizedCpf));
+    form.setValue('phone', customer.phone || '');
+    form.setValue('phone2', customer.phone2 || '');
+    form.setValue('phone3', customer.phone3 || '');
+    form.setValue('email', customer.email || '');
+    form.setValue('zip', customer.zip || '');
+    form.setValue('address', customer.address || '');
+    form.setValue('number', customer.number || '');
+    form.setValue('complement', customer.complement || '');
+    form.setValue('neighborhood', customer.neighborhood || '');
+    form.setValue('city', customer.city || '');
+    form.setValue('state', customer.state || '');
+    form.setValue('observations', customer.observations || '');
+
+    toast({
+      title: 'Cadastro encontrado',
+      description: 'Preenchemos seus dados automaticamente. Confira se está tudo certo.',
+    });
+  };
+
   const handleCpfBlurCheck = async (cpfRaw: string) => {
     try {
       const normalizedCpf = cpfRaw.replace(/\D/g, '');
@@ -283,8 +342,11 @@ export default function CheckoutForm() {
       if (isBlocked) {
         showBlockedCpfToast(cpfRaw.replace(/\D/g, ''));
         form.setError('cpf', { type: 'manual', message: 'Cadastro não atualizado. Não é possível prosseguir.' });
-      } else if (form.getFieldState('cpf').error?.message === 'Cadastro não atualizado. Não é possível prosseguir.') {
-        form.clearErrors('cpf');
+      } else {
+        if (form.getFieldState('cpf').error?.message === 'Cadastro não atualizado. Não é possível prosseguir.') {
+          form.clearErrors('cpf');
+        }
+        await autoFillCustomerFromCpf(cpfRaw);
       }
     } catch {
     }
@@ -352,6 +414,7 @@ export default function CheckoutForm() {
       status: 'Processando',
       paymentMethod: 'Crediário',
       installmentDetails,
+      source: 'catalogo',
     };
     
     try {
@@ -360,11 +423,6 @@ export default function CheckoutForm() {
           setLastOrder(savedOrder);
           clearCart();
       
-          toast({
-              title: "Pedido Realizado com Sucesso!",
-              description: `Seu pedido #${savedOrder.id} foi confirmado.`,
-          });
-
           if (settings.wapiInstance && settings.wapiToken) {
                 // Not implemented, but this is where the W-API call would go
           } else if (settings.storePhone) {
@@ -372,9 +430,10 @@ export default function CheckoutForm() {
               const productNames = cartItemsWithDetails.map(item => item.name).join(', ');
               
               const messageParts = [
-                  `*Novo Pedido Recebido!*`,
+                  `*Novo Pedido Recebido pelo Catálogo Online!*`,
                   `*Pedido:* ${savedOrder.id}`,
                   `*Cliente:* ${values.name}`,
+                  `*Origem:* Catálogo Online`,
                   `*Produtos:* ${productNames}`,
                   `*Total:* ${formatCurrency(total)}`,
                   `*Parcelamento Máximo:* Até ${maxAllowedInstallments}x`
@@ -386,6 +445,11 @@ export default function CheckoutForm() {
               const webUrl = `https://wa.me/55${storePhone}?text=${encodedMessage}`;
               window.open(webUrl, '_blank');
           }
+      
+          toast({
+              title: "Pedido Realizado com Sucesso!",
+              description: `Seu pedido #${savedOrder.id} foi confirmado.`,
+          });
       
           router.push(`/order-confirmation/${savedOrder.id}`);
         }

@@ -120,6 +120,7 @@ export type Order = {
   attachments?: Attachment[];
   sellerId?: string;
   sellerName?: string;
+  source?: 'catalogo' | 'admin';
   commission?: number;
   commissionPaid?: boolean;
   isCommissionManual?: boolean;
