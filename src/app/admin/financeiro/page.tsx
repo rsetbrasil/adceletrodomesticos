@@ -246,7 +246,7 @@ export default function FinanceiroPage() {
   const handlePrintSingleSeller = () => {
     if (!selectedPerformanceSeller) return;
     const printContents = document.getElementById('seller-report-modal-content')?.innerHTML;
-    const originalContents = document.body.innerHTML;
+    if (!printContents) return;
     
     const header = `
       <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 1rem; border-bottom: 1px solid #ccc;">
@@ -257,10 +257,46 @@ export default function FinanceiroPage() {
       </div>
     `;
 
-    document.body.innerHTML = `<div class="print-container">${header}${printContents}</div>`;
-    window.print();
-    document.body.innerHTML = originalContents;
-    window.location.reload(); // To re-attach React event listeners
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+
+    const printWindow = iframe.contentWindow;
+    const printDocument = printWindow?.document;
+
+    if (!printWindow || !printDocument) {
+      iframe.remove();
+      return;
+    }
+
+    const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style'))
+      .map(node => node.outerHTML)
+      .join('\n');
+
+    printDocument.open();
+    printDocument.write(`<!doctype html><html><head><title>Relatório de Vendas - ${selectedPerformanceSeller.name}</title>${styles}</head><body><div class="print-container">${header}${printContents}</div></body></html>`);
+    printDocument.close();
+
+    const cleanup = () => {
+      iframe.remove();
+    };
+
+    const onAfterPrint = () => {
+      printWindow.removeEventListener('afterprint', onAfterPrint);
+      cleanup();
+    };
+
+    printWindow.addEventListener('afterprint', onAfterPrint);
+    setTimeout(() => {
+      printWindow.focus();
+      printWindow.print();
+    }, 100);
   }
 
   
