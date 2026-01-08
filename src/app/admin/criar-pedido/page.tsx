@@ -497,7 +497,7 @@ export default function CreateOrderPage() {
       <CardContent>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
-            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8 items-start">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_1fr] gap-8 items-start">
               <FormField
                 control={form.control}
                 name="customerId"
@@ -511,11 +511,13 @@ export default function CreateOrderPage() {
                             type="button"
                             variant="outline"
                             role="combobox"
-                            className={cn("w-full justify-between", !field.value && "text-muted-foreground")}
+                            className={cn("w-full justify-between gap-2", !field.value && "text-muted-foreground")}
                           >
-                            {field.value
-                              ? (activeCustomers.find(c => getCustomerKey(c) === field.value)?.name || "Cliente indisponível")
-                              : "Selecione um cliente"}
+                            <span className="min-w-0 flex-1 truncate text-left">
+                              {field.value
+                                ? (activeCustomers.find(c => getCustomerKey(c) === field.value)?.name || "Cliente indisponível")
+                                : "Selecione um cliente"}
+                            </span>
                             <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                           </Button>
                         </FormControl>
