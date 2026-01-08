@@ -6,7 +6,7 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
-export default function ScrollButtons() {
+export default function ScrollButtons({ className }: { className?: string }) {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(true);
 
@@ -34,7 +34,12 @@ export default function ScrollButtons() {
   };
 
   return (
-    <div className="fixed top-1/2 -translate-y-1/2 right-6 z-50 flex flex-col gap-2 print-hidden">
+    <div
+      className={cn(
+        'fixed z-50 flex flex-col gap-2 print-hidden',
+        className ?? 'top-1/2 -translate-y-1/2 right-6'
+      )}
+    >
         <Button
             onClick={scrollToTop}
             className={cn(

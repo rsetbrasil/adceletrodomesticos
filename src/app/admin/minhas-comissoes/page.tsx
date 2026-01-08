@@ -296,9 +296,8 @@ export default function MyCommissionsPage() {
   }, [deliveredOrders, salesReportMonth, salesReportYear, user]);
 
   const mySalesReportTotals = useMemo(() => {
-    const totalSold = mySalesReportOrders.reduce((acc, order) => acc + (order.total || 0), 0);
     const totalCommission = mySalesReportOrders.reduce((acc, order) => acc + (order.commission || 0), 0);
-    return { count: mySalesReportOrders.length, totalSold, totalCommission };
+    return { count: mySalesReportOrders.length, totalCommission };
   }, [mySalesReportOrders]);
 
   if (!user) {
@@ -793,10 +792,6 @@ export default function MyCommissionsPage() {
                           <div className="text-sm text-muted-foreground">
                             <span className="font-medium text-foreground">{salesReportMonthLabel}</span>
                             <span className="mx-2">•</span>
-                            <span>Vendas: {mySalesReportTotals.count}</span>
-                            <span className="mx-2">•</span>
-                            <span>Total vendido: {formatCurrency(mySalesReportTotals.totalSold)}</span>
-                            <span className="mx-2">•</span>
                             <span>Comissão total: {formatCurrency(mySalesReportTotals.totalCommission)}</span>
                           </div>
                         </div>
@@ -809,7 +804,6 @@ export default function MyCommissionsPage() {
                                   <TableHead>Data</TableHead>
                                   <TableHead>Pedido</TableHead>
                                   <TableHead>Cliente</TableHead>
-                                  <TableHead className="text-right">Valor</TableHead>
                                   <TableHead className="text-right">Comissão</TableHead>
                                 </TableRow>
                               </TableHeader>
@@ -820,13 +814,12 @@ export default function MyCommissionsPage() {
                                       <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
                                       <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
                                       <TableCell>{order.customer.name}</TableCell>
-                                      <TableCell className="text-right font-semibold">{formatCurrency(order.total)}</TableCell>
                                       <TableCell className="text-right tabular-nums">{formatCurrency(order.commission || 0)}</TableCell>
                                     </TableRow>
                                   ))
                                 ) : (
                                   <TableRow>
-                                    <TableCell colSpan={5} className="h-24 text-center">Nenhuma venda entregue no período.</TableCell>
+                                    <TableCell colSpan={4} className="h-24 text-center">Nenhuma venda entregue no período.</TableCell>
                                   </TableRow>
                                 )}
                               </TableBody>

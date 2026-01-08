@@ -306,7 +306,7 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
                     <AdminNav />
                 </div>
                 <main>{children}</main>
-                <ScrollButtons />
+                <ScrollButtons className="bottom-6 right-4 sm:right-6" />
             </div>
 
             <Dialog open={isPasswordDialogOpen} onOpenChange={setIsPasswordDialogOpen}>
