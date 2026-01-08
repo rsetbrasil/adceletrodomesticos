@@ -12,6 +12,8 @@ import { useAudit } from './AuditContext';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
+const PERMISSIONS_CACHE_STORAGE_KEY = 'rolePermissionsCache';
+
 interface PermissionsContextType {
     permissions: RolePermissions | null;
     updatePermissions: (newPermissions: RolePermissions) => Promise<void>;
@@ -30,8 +32,20 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     
     useEffect(() => {
         let unsubscribe: (() => void) | null = null;
-        const timeoutId = window.setTimeout(() => {
+        try {
+            const cached = localStorage.getItem(PERMISSIONS_CACHE_STORAGE_KEY);
+            if (cached) {
+                const parsed = JSON.parse(cached) as RolePermissions;
+                setPermissions(parsed);
+                setIsLoading(false);
+            }
+        } catch {
             setPermissions(initialPermissions);
+            setIsLoading(false);
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            setPermissions((current) => current ?? initialPermissions);
             setIsLoading(false);
         }, 8000);
         try {
@@ -40,7 +54,13 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
             unsubscribe = onSnapshot(permissionsRef, async (docSnap) => {
                 window.clearTimeout(timeoutId);
                 if (docSnap.exists()) {
-                    setPermissions(docSnap.data() as RolePermissions);
+                    const nextPermissions = docSnap.data() as RolePermissions;
+                    setPermissions(nextPermissions);
+                    try {
+                        localStorage.setItem(PERMISSIONS_CACHE_STORAGE_KEY, JSON.stringify(nextPermissions));
+                    } catch {
+                        return;
+                    }
                 } else {
                     await setDoc(permissionsRef, initialPermissions);
                     setPermissions(initialPermissions);

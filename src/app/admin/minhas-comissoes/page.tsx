@@ -416,34 +416,50 @@ export default function MyCommissionsPage() {
                 </TabsList>
                 <TabsContent value="my_pending" className="mt-4">
                      <Card>
-                        <CardHeader className="p-4 sm:p-6">
+                        <CardHeader className="p-3 sm:p-6">
                             <CardTitle className="text-xl sm:text-2xl">Minhas Comissões a Receber</CardTitle>
                             <CardDescription className="text-xs sm:text-sm">Esta é a lista de todas as suas vendas concluídas cuja comissão ainda não foi paga.</CardDescription>
                         </CardHeader>
-                        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+                        <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
                              <div className="rounded-md border overflow-x-auto">
-                                <Table className="text-xs sm:text-sm">
+                                <Table className="w-full table-fixed text-[11px] sm:text-sm">
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Data da Venda</TableHead>
-                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Pedido ID</TableHead>
-                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
-                                            <TableHead className="h-9 px-2 text-right text-[11px] sm:h-12 sm:px-4 sm:text-sm">Valor da Comissão</TableHead>
+                                            <TableHead className="h-8 w-[76px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">
+                                              <span className="sm:hidden">Data</span>
+                                              <span className="hidden sm:inline">Data da Venda</span>
+                                            </TableHead>
+                                            <TableHead className="h-8 w-[78px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">
+                                              <span className="sm:hidden">Pedido</span>
+                                              <span className="hidden sm:inline">Pedido ID</span>
+                                            </TableHead>
+                                            <TableHead className="h-8 px-1 text-[10px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
+                                            <TableHead className="h-8 w-[86px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">
+                                              <span className="sm:hidden">Comissão</span>
+                                              <span className="hidden sm:inline">Valor da Comissão</span>
+                                            </TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {myPendingCommissions.length > 0 ? (
                                             myPendingCommissions.map(order => (
                                                 <TableRow key={order.id}>
-                                                    <TableCell className="whitespace-nowrap p-2 sm:p-4">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                                    <TableCell className="whitespace-nowrap p-1 sm:p-4">
+                                                      <span className="sm:hidden">{format(parseISO(order.date), "dd/MM/yy")}</span>
+                                                      <span className="hidden sm:inline">{format(parseISO(order.date), "dd/MM/yyyy")}</span>
+                                                    </TableCell>
                                                     <TableCell
-                                                      className="font-mono whitespace-nowrap p-2 max-w-[12ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
+                                                      className="font-mono whitespace-nowrap p-1 max-w-[9ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
                                                       title={displayNumericCode(order.id)}
                                                     >
                                                       {displayNumericCode(order.id)}
                                                     </TableCell>
-                                                    <TableCell className="p-2 sm:p-4">{order.customer.name}</TableCell>
-                                                    <TableCell className="p-2 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
+                                                    <TableCell className="p-1 sm:p-4">
+                                                      <span className="block truncate" title={order.customer.name}>
+                                                        {order.customer.name}
+                                                      </span>
+                                                    </TableCell>
+                                                    <TableCell className="whitespace-nowrap p-1 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
                                                 </TableRow>
                                             ))
                                         ) : (
@@ -460,36 +476,56 @@ export default function MyCommissionsPage() {
                 {isManagerOrAdmin && (
                   <TabsContent value="team_pending" className="mt-4">
                     <Card>
-                      <CardHeader className="p-4 sm:p-6">
+                      <CardHeader className="p-3 sm:p-6">
                         <CardTitle className="text-xl sm:text-2xl">Comissões Pendentes (Equipe)</CardTitle>
                         <CardDescription className="text-xs sm:text-sm">Lista de todas as vendas concluídas de todos os vendedores, cuja comissão ainda não foi paga.</CardDescription>
                       </CardHeader>
-                      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
+                      <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
                         <div className="rounded-md border overflow-x-auto">
-                          <Table className="text-xs sm:text-sm">
+                          <Table className="w-full table-fixed text-[11px] sm:text-sm">
                             <TableHeader>
                               <TableRow>
-                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Data da Venda</TableHead>
-                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Vendedor</TableHead>
-                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Pedido ID</TableHead>
-                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
-                                <TableHead className="h-9 px-2 text-right text-[11px] sm:h-12 sm:px-4 sm:text-sm">Valor da Comissão</TableHead>
+                                <TableHead className="h-8 w-[76px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">
+                                  <span className="sm:hidden">Data</span>
+                                  <span className="hidden sm:inline">Data da Venda</span>
+                                </TableHead>
+                                <TableHead className="h-8 px-1 text-[10px] sm:h-12 sm:px-4 sm:text-sm">Vendedor</TableHead>
+                                <TableHead className="h-8 w-[78px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">
+                                  <span className="sm:hidden">Pedido</span>
+                                  <span className="hidden sm:inline">Pedido ID</span>
+                                </TableHead>
+                                <TableHead className="h-8 px-1 text-[10px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
+                                <TableHead className="h-8 w-[86px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">
+                                  <span className="sm:hidden">Comissão</span>
+                                  <span className="hidden sm:inline">Valor da Comissão</span>
+                                </TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {teamPendingCommissions.length > 0 ? (
                                 teamPendingCommissions.map(order => (
                                   <TableRow key={order.id}>
-                                    <TableCell className="whitespace-nowrap p-2 sm:p-4">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                                    <TableCell className="p-2 sm:p-4">{order.sellerName}</TableCell>
+                                    <TableCell className="whitespace-nowrap p-1 sm:p-4">
+                                      <span className="sm:hidden">{format(parseISO(order.date), "dd/MM/yy")}</span>
+                                      <span className="hidden sm:inline">{format(parseISO(order.date), "dd/MM/yyyy")}</span>
+                                    </TableCell>
+                                    <TableCell className="p-1 sm:p-4">
+                                      <span className="block truncate" title={order.sellerName}>
+                                        {order.sellerName}
+                                      </span>
+                                    </TableCell>
                                     <TableCell
-                                      className="font-mono whitespace-nowrap p-2 max-w-[12ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
+                                      className="font-mono whitespace-nowrap p-1 max-w-[9ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
                                       title={displayNumericCode(order.id)}
                                     >
                                       {displayNumericCode(order.id)}
                                     </TableCell>
-                                    <TableCell className="p-2 sm:p-4">{order.customer.name}</TableCell>
-                                    <TableCell className="p-2 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
+                                    <TableCell className="p-1 sm:p-4">
+                                      <span className="block truncate" title={order.customer.name}>
+                                        {order.customer.name}
+                                      </span>
+                                    </TableCell>
+                                    <TableCell className="whitespace-nowrap p-1 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
                                   </TableRow>
                                 ))
                               ) : (
@@ -652,7 +688,7 @@ export default function MyCommissionsPage() {
                 <TabsContent value="reports" className="mt-4">
                   {isManagerOrAdmin ? (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="p-3 sm:p-6">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <CardTitle className="flex items-center gap-2">
@@ -671,8 +707,8 @@ export default function MyCommissionsPage() {
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                      <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                             <div className="w-full sm:w-[180px]">
                               <Select value={salesReportYear} onValueChange={setSalesReportYear}>
@@ -713,28 +749,32 @@ export default function MyCommissionsPage() {
 
                         <div id="team-sales-report-content">
                           <div className="rounded-md border overflow-x-auto">
-                            <Table>
+                            <Table className="w-full table-fixed text-[11px] sm:text-sm">
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Vendedor</TableHead>
-                                  <TableHead className="text-center">Vendas</TableHead>
-                                  <TableHead className="text-right">Total Vendido</TableHead>
-                                  <TableHead className="text-right">Comissão Gerada</TableHead>
-                                  <TableHead className="text-right">Ações</TableHead>
+                                  <TableHead className="h-8 px-1 text-[10px] sm:h-12 sm:px-4 sm:text-sm">Vendedor</TableHead>
+                                  <TableHead className="h-8 w-[56px] px-1 text-center text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Vendas</TableHead>
+                                  <TableHead className="h-8 w-[96px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Total</TableHead>
+                                  <TableHead className="h-8 w-[106px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Comissão</TableHead>
+                                  <TableHead className="h-8 w-[72px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Ações</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {sellerSalesReport.length > 0 ? (
                                   sellerSalesReport.map(seller => (
                                     <TableRow key={seller.id}>
-                                      <TableCell className="font-medium">{seller.name}</TableCell>
-                                      <TableCell className="text-center">{seller.salesCount}</TableCell>
-                                      <TableCell className="text-right">{formatCurrency(seller.totalSold)}</TableCell>
-                                      <TableCell className="text-right font-semibold">{formatCurrency(seller.totalCommission)}</TableCell>
-                                      <TableCell className="text-right">
+                                      <TableCell className="p-1 sm:p-4">
+                                        <span className="block truncate font-medium" title={seller.name}>
+                                          {seller.name}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap p-1 text-center tabular-nums sm:p-4">{seller.salesCount}</TableCell>
+                                      <TableCell className="whitespace-nowrap p-1 text-right tabular-nums sm:p-4">{formatCurrency(seller.totalSold)}</TableCell>
+                                      <TableCell className="whitespace-nowrap p-1 text-right font-semibold tabular-nums sm:p-4">{formatCurrency(seller.totalCommission)}</TableCell>
+                                      <TableCell className="whitespace-nowrap p-1 text-right sm:p-4">
                                         <Button variant="outline" size="sm" onClick={() => handleOpenSellerReport(seller)}>
-                                          <Eye className="mr-2 h-4 w-4" />
-                                          Ver Vendas
+                                          <Eye className="h-4 w-4 sm:mr-2" />
+                                          <span className="hidden sm:inline">Ver Vendas</span>
                                         </Button>
                                       </TableCell>
                                     </TableRow>
@@ -757,7 +797,7 @@ export default function MyCommissionsPage() {
                     </Card>
                   ) : (
                     <Card>
-                      <CardHeader>
+                      <CardHeader className="p-3 sm:p-6">
                         <div className="flex flex-col gap-3">
                           <div>
                             <CardTitle className="flex items-center gap-2">
@@ -770,8 +810,8 @@ export default function MyCommissionsPage() {
                           </div>
                         </div>
                       </CardHeader>
-                      <CardContent>
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                      <CardContent className="p-3 pt-0 sm:p-6 sm:pt-0">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-3 sm:mb-4">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                             <div className="w-full sm:w-[180px]">
                               <Select value={salesReportYear} onValueChange={setSalesReportYear}>
@@ -808,23 +848,35 @@ export default function MyCommissionsPage() {
 
                         <div id="my-sales-report-content">
                           <div className="rounded-md border overflow-x-auto">
-                            <Table>
+                            <Table className="w-full table-fixed text-[11px] sm:text-sm">
                               <TableHeader>
                                 <TableRow>
-                                  <TableHead>Data</TableHead>
-                                  <TableHead>Pedido</TableHead>
-                                  <TableHead>Cliente</TableHead>
-                                  <TableHead className="text-right">Comissão</TableHead>
+                                  <TableHead className="h-8 w-[76px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Data</TableHead>
+                                  <TableHead className="h-8 w-[78px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Pedido</TableHead>
+                                  <TableHead className="h-8 px-1 text-[10px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
+                                  <TableHead className="h-8 w-[86px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Comissão</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
                                 {mySalesReportOrders.length > 0 ? (
                                   mySalesReportOrders.map(order => (
                                     <TableRow key={order.id}>
-                                      <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                                      <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
-                                      <TableCell>{order.customer.name}</TableCell>
-                                      <TableCell className="text-right tabular-nums">{formatCurrency(order.commission || 0)}</TableCell>
+                                      <TableCell className="whitespace-nowrap p-1 sm:p-4">
+                                        <span className="sm:hidden">{format(parseISO(order.date), "dd/MM/yy")}</span>
+                                        <span className="hidden sm:inline">{format(parseISO(order.date), "dd/MM/yyyy")}</span>
+                                      </TableCell>
+                                      <TableCell
+                                        className="font-mono whitespace-nowrap p-1 max-w-[9ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
+                                        title={displayNumericCode(order.id)}
+                                      >
+                                        {displayNumericCode(order.id)}
+                                      </TableCell>
+                                      <TableCell className="p-1 sm:p-4">
+                                        <span className="block truncate" title={order.customer.name}>
+                                          {order.customer.name}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="whitespace-nowrap p-1 text-right tabular-nums sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
                                     </TableRow>
                                   ))
                                 ) : (
@@ -868,25 +920,37 @@ export default function MyCommissionsPage() {
               </div>
             </div>
             <div className="rounded-md border max-h-[60vh] overflow-y-auto overflow-x-auto seller-report-table-wrapper">
-              <Table>
+              <Table className="w-full table-fixed text-[11px] sm:text-sm">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Data</TableHead>
-                    <TableHead>Pedido</TableHead>
-                    <TableHead>Cliente</TableHead>
-                    <TableHead className="text-right">Valor</TableHead>
-                    <TableHead className="text-right">Comissão</TableHead>
+                    <TableHead className="h-8 w-[76px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Data</TableHead>
+                    <TableHead className="h-8 w-[78px] px-1 text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Pedido</TableHead>
+                    <TableHead className="h-8 px-1 text-[10px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
+                    <TableHead className="h-8 w-[86px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Valor</TableHead>
+                    <TableHead className="h-8 w-[86px] px-1 text-right text-[10px] sm:h-12 sm:w-auto sm:px-4 sm:text-sm">Comissão</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(selectedSellerReport?.orders.length ?? 0) > 0 ? (
                     selectedSellerReport?.orders.map(order => (
                       <TableRow key={order.id}>
-                        <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                        <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
-                        <TableCell>{order.customer.name}</TableCell>
-                        <TableCell className="text-right font-semibold">{formatCurrency(order.total)}</TableCell>
-                        <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
+                        <TableCell className="whitespace-nowrap p-1 sm:p-4">
+                          <span className="sm:hidden">{format(parseISO(order.date), "dd/MM/yy")}</span>
+                          <span className="hidden sm:inline">{format(parseISO(order.date), "dd/MM/yyyy")}</span>
+                        </TableCell>
+                        <TableCell
+                          className="font-mono whitespace-nowrap p-1 max-w-[9ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
+                          title={displayNumericCode(order.id)}
+                        >
+                          {displayNumericCode(order.id)}
+                        </TableCell>
+                        <TableCell className="p-1 sm:p-4">
+                          <span className="block truncate" title={order.customer.name}>
+                            {order.customer.name}
+                          </span>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap p-1 text-right font-semibold sm:p-4">{formatCurrency(order.total)}</TableCell>
+                        <TableCell className="whitespace-nowrap p-1 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
                       </TableRow>
                     ))
                   ) : (

@@ -15,6 +15,7 @@ import { errorEmitter } from '@/firebase/error-emitter';
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const AUTH_SESSION_STORAGE_KEY = 'authSession';
 const LEGACY_USER_STORAGE_KEY = 'user';
+const USERS_CACHE_STORAGE_KEY = 'usersCache';
 
 type StoredAuthSession = {
   user: User;
@@ -40,7 +41,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [users, setUsers] = useState<User[]>([]);
+  const [users, setUsers] = useState<User[]>(initialUsers);
   const [isLoading, setIsLoading] = useState(true);
   const [usersLoaded, setUsersLoaded] = useState(false);
   const [canValidateSession, setCanValidateSession] = useState(false);
@@ -90,6 +91,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  const readCachedUsers = (): User[] | null => {
+    try {
+      const raw = localStorage.getItem(USERS_CACHE_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return null;
+      return parsed as User[];
+    } catch {
+      return null;
+    }
+  };
+
+  const writeCachedUsers = (nextUsers: User[]) => {
+    try {
+      localStorage.setItem(USERS_CACHE_STORAGE_KEY, JSON.stringify(nextUsers));
+    } catch {
+      return;
+    }
+  };
+
   const writeStoredSession = (userToStore: User, expiresAt?: number) => {
     const session: StoredAuthSession = {
       user: userToStore,
@@ -106,13 +127,15 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [user]);
 
   useEffect(() => {
-    setIsLoading(true);
     let usersUnsubscribe: (() => void) | null = null;
+    const cachedUsers = readCachedUsers();
+    if (cachedUsers?.length) {
+      setUsers(cachedUsers);
+    }
     const usersTimeoutId = window.setTimeout(() => {
       setUsers(initialUsers);
       setUsersLoaded(true);
       setCanValidateSession(false);
-      setIsLoading(false);
     }, 8000);
     try {
       const { db } = getClientFirebase();
@@ -120,10 +143,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         collection(db, 'users'),
         (snapshot) => {
           window.clearTimeout(usersTimeoutId);
-          setUsers(snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as User)));
+          const nextUsers = snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as User));
+          setUsers(nextUsers);
+          writeCachedUsers(nextUsers);
           setUsersLoaded(true);
           setCanValidateSession(true);
-          setIsLoading(false);
         },
         (error) => {
           window.clearTimeout(usersTimeoutId);
@@ -135,7 +159,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUsers(initialUsers);
           setUsersLoaded(true);
           setCanValidateSession(false);
-          setIsLoading(false);
         }
       );
     } catch (error) {
@@ -143,7 +166,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setUsers(initialUsers);
       setUsersLoaded(true);
       setCanValidateSession(false);
-      setIsLoading(false);
     }
     
     return () => {
@@ -182,22 +204,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           setUser(null);
           clearStoredSession();
           clearLogoutTimeout();
+          setIsLoading(false);
           return;
         }
         setUser(session.user);
         scheduleLogoutAt(session.expiresAt);
+        setIsLoading(false);
         return;
       }
 
       const legacy = localStorage.getItem(LEGACY_USER_STORAGE_KEY);
-      if (!legacy) return;
+      if (!legacy) {
+        setIsLoading(false);
+        return;
+      }
       const legacyUser = JSON.parse(legacy) as User;
       setUser(legacyUser);
       writeStoredSession(legacyUser);
+      setIsLoading(false);
     } catch {
       setUser(null);
       clearStoredSession();
       clearLogoutTimeout();
+      setIsLoading(false);
     }
   }, []);
 

@@ -811,7 +811,13 @@ export default function CustomersAdminPage() {
                                 order.installmentDetails.every(inst => inst.status === 'Pago');
                             
                             const isPaidOff = allInstallmentsPaid || (order.paymentMethod && ['Pix', 'Dinheiro'].includes(order.paymentMethod));
-                            const productNames = order.items.map(item => item.name).join(', ');
+                            const productNames = order.items
+                              .map((item) => {
+                                const rawProductCode = (item as any).code || item.id;
+                                const productCode = displayNumericCode(rawProductCode) || '-';
+                                return `${item.name} (Cód.: ${productCode})`;
+                              })
+                              .join(', ');
 
                             return (
                                 <AccordionItem value={order.id} key={order.id} className="border-b-0 rounded-lg border bg-background">
