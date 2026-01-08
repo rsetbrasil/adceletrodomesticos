@@ -75,6 +75,12 @@ const toIsoDateString = (value: unknown): string => {
   return '';
 };
 
+const normalizeProductCode = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const digits = value.replace(/\D/g, '');
+  return digits ? digits : undefined;
+};
+
 const normalizeCachedProducts = (cachedProducts: CachedLiteProduct[]): Product[] => {
   return cachedProducts.map((p) => {
     const coverImageUrl =
@@ -82,7 +88,7 @@ const normalizeCachedProducts = (cachedProducts: CachedLiteProduct[]): Product[]
 
     return {
       id: p.id,
-      code: p.code,
+      code: normalizeProductCode(p.code),
       name: p.name ?? '',
       description: p.description ?? '',
       longDescription: '',
@@ -108,7 +114,7 @@ const normalizeCachedProducts = (cachedProducts: CachedLiteProduct[]): Product[]
 const toLiteCacheProducts = (products: Product[]): CachedLiteProduct[] => {
   return products.map((p) => ({
     id: p.id,
-    code: p.code,
+    code: normalizeProductCode(p.code),
     name: p.name,
     description: p.description,
     price: p.price,
@@ -175,7 +181,10 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       if (isAdminRoute) {
         const productsUnsubscribe = onSnapshot(query(collection(db, 'products'), orderBy('createdAt', 'asc')), (snapshot) => {
           if (timeoutId !== null) window.clearTimeout(timeoutId);
-          const fetchedProducts = snapshot.docs.map(d => ({ ...d.data(), id: d.id } as Product));
+          const fetchedProducts = snapshot.docs.map(d => {
+            const data = d.data() as Partial<Product>;
+            return { ...data, id: d.id, code: normalizeProductCode(data.code) } as Product;
+          });
           setProducts(fetchedProducts);
           setIsLoading(false);
           saveToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(fetchedProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
@@ -221,6 +230,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
             return {
               id: d.id,
+              code: normalizeProductCode(data.code),
               name: data.name ?? '',
               description: data.description ?? '',
               longDescription: '',
