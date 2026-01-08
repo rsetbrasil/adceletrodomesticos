@@ -1,7 +1,7 @@
 
 'use client';
 
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useSettings } from "@/context/SettingsContext";
 import { useRouter, usePathname } from "next/navigation";
@@ -103,6 +103,8 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
     const { toast } = useToast();
     const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
     const [isNavSheetOpen, setIsNavSheetOpen] = useState(false);
+    const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+    const loadingSinceRef = useRef<number | null>(null);
 
     const form = useForm<z.infer<typeof changePasswordSchema>>({
         resolver: zodResolver(changePasswordSchema),
@@ -157,6 +159,24 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
         setIsNavSheetOpen(false);
     }, [pathname]);
 
+    useEffect(() => {
+        const anyLoading = isLoading || permissionsLoading || settingsLoading;
+
+        if (!anyLoading) {
+            loadingSinceRef.current = null;
+            setLoadingTimedOut(false);
+            return;
+        }
+
+        if (!loadingSinceRef.current) {
+            loadingSinceRef.current = Date.now();
+        }
+
+        const remainingMs = Math.max(0, 12000 - (Date.now() - loadingSinceRef.current));
+        const timeoutId = window.setTimeout(() => setLoadingTimedOut(true), remainingMs);
+        return () => window.clearTimeout(timeoutId);
+    }, [isLoading, permissionsLoading, settingsLoading]);
+
     const handlePasswordChange = async (values: z.infer<typeof changePasswordSchema>) => {
         const success = await changeMyPassword(values.currentPassword, values.newPassword);
         if (success) {
@@ -164,6 +184,33 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
             form.reset();
         }
     };
+
+    if ((isLoading || permissionsLoading || settingsLoading) && loadingTimedOut) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-background px-4">
+                <div className="w-full max-w-md space-y-4 text-center">
+                    <p className="text-base font-medium">Não foi possível carregar o painel.</p>
+                    <p className="text-sm text-muted-foreground">
+                        A verificação de sessão ou permissões demorou além do esperado.
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
+                        <Button
+                            variant="default"
+                            onClick={() => {
+                                logout();
+                                router.replace('/login');
+                            }}
+                        >
+                            Ir para o login
+                        </Button>
+                        <Button variant="outline" onClick={() => window.location.reload()}>
+                            Recarregar
+                        </Button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (isLoading) {
         return (
