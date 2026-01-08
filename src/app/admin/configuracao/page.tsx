@@ -30,6 +30,7 @@ import { ptBR } from 'date-fns/locale';
 import Image from 'next/image';
 import { Switch } from '@/components/ui/switch';
 import { useData } from '@/context/DataContext';
+import { buildWhatsAppLink, toBrazilE164 } from '@/lib/utils';
 
 const settingsSchema = z.object({
   storeName: z.string().trim().min(1, 'O nome da loja é obrigatório.').max(1000),
@@ -41,6 +42,8 @@ const settingsSchema = z.object({
   accessControlEnabled: z.boolean().optional(),
   commercialHourStart: z.string().optional(),
   commercialHourEnd: z.string().optional(),
+  chargeSendTime: z.string().optional(),
+  menuiaSendEnabled: z.boolean().optional(),
 });
 
 function AuditLogCard() {
@@ -156,6 +159,8 @@ export default function ConfiguracaoPage() {
         accessControlEnabled: false,
         commercialHourStart: '08:00',
         commercialHourEnd: '18:00',
+        chargeSendTime: '09:00',
+        menuiaSendEnabled: true,
     },
   });
 
@@ -165,6 +170,8 @@ export default function ConfiguracaoPage() {
           ...settings,
           commercialHourStart: settings.commercialHourStart || '08:00',
           commercialHourEnd: settings.commercialHourEnd || '18:00',
+          chargeSendTime: settings.chargeSendTime || '09:00',
+          menuiaSendEnabled: settings.menuiaSendEnabled ?? true,
       });
     }
   }, [settingsLoading, settings, form]);
@@ -198,6 +205,19 @@ export default function ConfiguracaoPage() {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     toast({ title: 'Exportação Concluída!', description: `O arquivo ${filename} foi baixado.` });
+  };
+
+  const handleExportFullBackup = () => {
+    const backupData = {
+      settings,
+      products,
+      orders,
+      categories,
+      users,
+      permissions,
+    };
+
+    handleExport(backupData, 'backup-completo');
   };
 
 
@@ -261,6 +281,47 @@ export default function ConfiguracaoPage() {
   function onSubmit(values: z.infer<typeof settingsSchema>) {
     updateSettings(values);
   }
+
+  const handleTestMenuiaSend = async () => {
+    const rawPhone = form.getValues('storePhone') || settings.storePhone;
+    const to = toBrazilE164(rawPhone);
+    if (!to) {
+      toast({ title: 'Erro', description: 'Telefone da loja inválido.', variant: 'destructive' });
+      return;
+    }
+
+    const message = `Teste automático (Menuia) - ${new Date().toLocaleString('pt-BR')}`;
+    const menuiaSendEnabled = form.getValues('menuiaSendEnabled') ?? true;
+    if (!menuiaSendEnabled) {
+      const link = buildWhatsAppLink(to, message);
+      if (!link) {
+        toast({ title: 'Erro', description: 'Telefone da loja inválido.', variant: 'destructive' });
+        return;
+      }
+      window.open(link, '_blank', 'noopener,noreferrer');
+      toast({ title: 'WhatsApp aberto', description: 'Envio manual (Menuia desativado).' });
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/menuia/send-text', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          to,
+          message,
+        }),
+      });
+
+      if (res.ok) {
+        toast({ title: 'OK', description: 'Mensagem de teste enviada para o WhatsApp da loja.' });
+      } else {
+        toast({ title: 'Erro', description: `Falha ao enviar mensagem (status ${res.status}).`, variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Erro', description: 'Falha ao enviar mensagem de teste.', variant: 'destructive' });
+    }
+  };
 
   const handlePermissionChange = (role: UserRole, section: AppSection, checked: boolean) => {
     setLocalPermissions(prev => {
@@ -394,6 +455,22 @@ export default function ConfiguracaoPage() {
                   />
                   <FormField
                     control={form.control}
+                    name="chargeSendTime"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Horário do Envio Automático de Cobrança</FormLabel>
+                        <FormControl>
+                          <Input type="time" {...field} value={field.value || '09:00'} />
+                        </FormControl>
+                        <FormDescription>
+                          Horário de referência para o envio automático das mensagens de cobrança.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
                     name="storePhone"
                     render={({ field }) => (
                       <FormItem>
@@ -404,7 +481,31 @@ export default function ConfiguracaoPage() {
                         <FormControl>
                           <Input placeholder="5511999999999" {...field} />
                         </FormControl>
+                        <div className="flex">
+                          <Button type="button" variant="outline" size="sm" onClick={handleTestMenuiaSend}>
+                            Testar envio (Menuia)
+                          </Button>
+                        </div>
                         <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="menuiaSendEnabled"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4 md:col-span-2">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">
+                            Enviar automaticamente pelo WhatsApp (Menuia)
+                          </FormLabel>
+                          <FormDescription>
+                            Se desativado, o sistema abre o WhatsApp para envio manual.
+                          </FormDescription>
+                        </div>
+                        <FormControl>
+                          <Switch checked={field.value ?? true} onCheckedChange={field.onChange} />
+                        </FormControl>
                       </FormItem>
                     )}
                   />
@@ -604,6 +705,10 @@ export default function ConfiguracaoPage() {
                     <Button variant="outline" onClick={() => handleExport(products, 'produtos')}>
                         <Package className="mr-2 h-4 w-4" />
                         Exportar Produtos
+                    </Button>
+                    <Button variant="outline" onClick={handleExportFullBackup}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Exportar Backup Completo
                     </Button>
                 </div>
               </div>

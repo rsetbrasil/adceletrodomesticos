@@ -22,7 +22,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
-import { cn, displayNumericCode, extractDigits } from '@/lib/utils';
+import { buildWhatsAppLink, cn, displayNumericCode, extractDigits, toBrazilE164 } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
 import PaymentDialog from '@/components/PaymentDialog';
@@ -471,29 +471,73 @@ export default function CustomersAdminPage() {
     setIsAddCustomerDialogOpen(false);
   };
   
-  const handleSendWhatsAppReminder = (order: Order, installment: Installment) => {
-    if (!settings.wapiInstance || !settings.wapiToken) {
-        const customerName = order.customer.name.split(' ')[0];
-        const customerPhone = order.customer.phone.replace(/\D/g, '');
-        const dueDate = format(parseISO(installment.dueDate), 'dd/MM/yyyy', { locale: ptBR });
-        const amount = formatCurrency(installment.amount - (installment.paidAmount || 0));
-        
-        const message = `Olá, ${customerName}! Passando para lembrar sobre o vencimento da sua parcela nº ${installment.installmentNumber} do seu carnê (pedido ${displayNumericCode(order.id)}).
+  const handleSendWhatsAppReminder = async (order: Order, installment: Installment) => {
+    const dueDate = format(parseISO(installment.dueDate), 'dd/MM/yyyy', { locale: ptBR });
+    const pendingAmount = Math.max(0, (installment.amount || 0) - (installment.paidAmount || 0));
 
-Vencimento: *${dueDate}*
-Valor: *${amount}*
+    const orderCode = displayNumericCode(order.id) || order.id;
+    const customerFirstName = (order.customer.name || '').split(' ')[0] || order.customer.name;
+    const customerCode = displayNumericCode(order.customer.code) || '-';
 
-Chave pix: ${settings.pixKey}
-Adriano Cavalcante de Oliveira
-Banco: Nubank 
+    const itemsLines = (order.items || []).map((item) => {
+      const productName = (item.name || '').trim();
+      const rawProductCode = (item as any).code || item.id;
+      const productCode = displayNumericCode(rawProductCode) || '-';
+      return `*${productName}* (Cód.: ${productCode})`;
+    });
 
-Não esqueça de enviar o comprovante!`;
-        
-        const whatsappUrl = `https://wa.me/55${customerPhone}?text=${encodeURIComponent(message)}`;
-        window.open(whatsappUrl, '_blank');
-    } else {
-        // W-API logic would go here
+    const message = [
+      `Olá, ${customerFirstName}!`,
+      '',
+      `Lembrete de parcela do carnê (pedido ${orderCode}).`,
+      `Parcela: ${installment.installmentNumber}/${order.installments || '-'}`,
+      `Vencimento: *${dueDate}*`,
+      `Valor: *${formatCurrency(pendingAmount)}*`,
+      customerCode !== '-' ? `Cód. Cliente: ${customerCode}` : null,
+      '',
+      'Produtos:',
+      ...itemsLines,
+      '',
+      `Chave pix: ${settings.pixKey || '-'}`,
+      'Adriano Cavalcante de Oliveira',
+      'Banco: Nubank',
+      '',
+      'Não esqueça de enviar o comprovante!',
+      '',
+      settings.storeName ? `*${settings.storeName}*` : null,
+    ]
+      .filter((line) => line != null)
+      .join('\n');
+
+    const customerTo = toBrazilE164(order.customer.phone);
+    const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+    if (customerTo && menuiaSendEnabled) {
+      try {
+        const res = await fetch('/api/menuia/send-text', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ to: customerTo, message }),
+        });
+        if (res.ok) {
+          toast({ title: 'Mensagem enviada!', description: 'Cobrança enviada no WhatsApp.' });
+          return;
+        }
+      } catch {
+      }
     }
+    if (customerTo) {
+      const link = buildWhatsAppLink(customerTo, message);
+      if (link) {
+        window.open(link, '_blank', 'noopener,noreferrer');
+        toast({ title: 'WhatsApp aberto', description: 'Envio manual da cobrança.' });
+        return;
+      }
+    }
+    toast({
+      title: 'Erro',
+      description: 'Não foi possível enviar automaticamente pelo WhatsApp.',
+      variant: 'destructive',
+    });
   };
 
   const handleDeleteCustomer = () => {

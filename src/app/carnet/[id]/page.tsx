@@ -92,7 +92,9 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                     </div>
                     <div className="col-span-2">
                         <p className="text-xs print:text-[9px] print-default:text-[8px] print-a4:text-[10px] text-muted-foreground">PRODUTOS</p>
-                        <p className="font-semibold">{order.items.map(item => item.name).join(', ')}</p>
+                        <p className="font-semibold">
+                          {order.items.map((item) => `${item.name} (Cód.: ${displayNumericCode(item.id)})`).join(', ')}
+                        </p>
                     </div>
                 </div>
 
@@ -131,7 +133,7 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                                 <td className="p-1 print:p-0.5 border-l text-center font-mono">
                                     {installment.status === 'Pago' 
                                         ? (installment.paymentDate ? format(parseISO(installment.paymentDate), 'dd/MM/yy') : 'Pago')
-                                        : '___/__/____'
+                                        : ''
                                     }
                                 </td>
                             </tr>

@@ -10,6 +10,7 @@ import { useAdmin, useAdminData } from '@/context/AdminContext';
 import { useData } from '@/context/DataContext';
 import { useAuth } from '@/context/AuthContext';
 import { useAudit } from '@/context/AuditContext';
+import { useSettings } from '@/context/SettingsContext';
 import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 
@@ -22,7 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandList, CommandItem } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Check, ChevronsUpDown, PlusCircle, ShoppingCart, Trash2, CalendarIcon, MinusCircle, FileText } from 'lucide-react';
-import { cn, displayNumericCode } from '@/lib/utils';
+import { buildWhatsAppLink, cn, displayNumericCode, toBrazilE164 } from '@/lib/utils';
 import type { CustomerInfo, User, Product, CartItem, Order, Installment } from '@/lib/types';
 import { addMonths, format, parse, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -162,6 +163,7 @@ export default function CreateOrderPage() {
   const { logAction } = useAudit();
   const router = useRouter();
   const { toast } = useToast();
+  const { settings } = useSettings();
 
   const [selectedItems, setSelectedItems] = useState<CartItem[]>([]);
   const [productSearch, setProductSearch] = useState('');
@@ -353,6 +355,89 @@ export default function CreateOrderPage() {
     try {
         const savedOrder = await addOrder(orderData, logAction, user);
         if (savedOrder) {
+            const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+            const sendMenuiaText = async (to: string, message: string) => {
+              if (!menuiaSendEnabled) {
+                const link = buildWhatsAppLink(to, message);
+                if (link) {
+                  window.open(link, '_blank', 'noopener,noreferrer');
+                }
+                return true;
+              }
+
+              try {
+                const res = await fetch('/api/menuia/send-text', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ to, message }),
+                });
+                if (res.ok) return true;
+              } catch {
+              }
+
+              const link = buildWhatsAppLink(to, message);
+              if (link) {
+                window.open(link, '_blank', 'noopener,noreferrer');
+                return true;
+              }
+              return false;
+            };
+
+            const orderId = displayNumericCode(savedOrder.id);
+            const customerFirstName = (savedOrder.customer.name || '').split(' ')[0] || savedOrder.customer.name;
+
+            const itemsLines = (savedOrder.items || []).flatMap((item) => {
+              const productCode = displayNumericCode(item.id) || item.id;
+              const unitPrice = item.price;
+              const subtotal = item.price * item.quantity;
+              return [
+                `*${item.name}* (Cód.: ${productCode})`,
+                `Valor: *${formatCurrency(unitPrice)}*`,
+                `Quantidade: *${item.quantity} un*`,
+                `Subtotal: *${formatCurrency(subtotal)}*`,
+                '',
+              ];
+            });
+            if (itemsLines.length > 0) itemsLines.pop();
+
+            const storeMessage = [
+              `Novo pedido manual: *${orderId}*`,
+              '',
+              `Vendedor: *${seller.name}*`,
+              `Cliente: *${savedOrder.customer.name}*`,
+              `Telefone: ${savedOrder.customer.phone || '-'}`,
+              '',
+              '*Produtos:*',
+              '',
+              ...itemsLines,
+              '',
+              `Total: *${formatCurrency(savedOrder.total)}*`,
+            ].join('\n');
+
+            const customerMessage = [
+              `Olá, ${customerFirstName}!`,
+              `Seu pedido *${orderId}* foi registrado no valor de *${formatCurrency(savedOrder.total)}*.`,
+              'Se precisar, responda esta mensagem para falar com a loja.',
+            ].join('\n');
+
+            const storeTo = toBrazilE164(settings.storePhone);
+            const customerTo = toBrazilE164(savedOrder.customer.phone);
+            const sends: Promise<boolean>[] = [];
+            if (storeTo && menuiaSendEnabled) sends.push(sendMenuiaText(storeTo, storeMessage));
+            if (customerTo) sends.push(sendMenuiaText(customerTo, customerMessage));
+
+            if (sends.length > 0 && menuiaSendEnabled) {
+              const results = await Promise.allSettled(sends);
+              const failed = results.some(r => r.status === 'rejected' || r.value === false);
+              if (failed) {
+                toast({
+                  title: 'Aviso',
+                  description: 'Não foi possível enviar alguma mensagem automática no WhatsApp.',
+                  variant: 'destructive',
+                });
+              }
+            }
+
             router.push(`/admin/pedidos`);
         }
     } catch (error) {

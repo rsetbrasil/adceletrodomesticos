@@ -2,36 +2,76 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { useMemo } from 'react';
+import { useState } from 'react';
 import { useSettings } from '@/context/SettingsContext';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
-
-const toWhatsAppPhone = (value: string): string | null => {
-    const digits = value.replace(/\D/g, '');
-    if (!digits) return null;
-    if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return digits;
-    if (digits.length === 10 || digits.length === 11) return `55${digits}`;
-    return digits;
-};
+import { buildWhatsAppLink, toBrazilE164 } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
 
 export default function ChatWidget() {
     const { settings } = useSettings();
+    const { toast } = useToast();
+    const [isSending, setIsSending] = useState(false);
 
-    const whatsappUrl = useMemo(() => {
-        const phone = toWhatsAppPhone(settings.storePhone || '');
-        if (!phone) return null;
-        const text = encodeURIComponent('Olá! Vim pelo site e gostaria de atendimento.');
-        return `https://wa.me/${phone}?text=${text}`;
-    }, [settings.storePhone]);
+    const to = toBrazilE164(settings.storePhone);
 
-    if (!whatsappUrl) return null;
+    if (!to) return null;
+
+    const handleSend = async () => {
+        if (isSending) return;
+        setIsSending(true);
+        const message = 'Olá! Vim pelo site e gostaria de atendimento.';
+        const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+        try {
+            if (!menuiaSendEnabled) {
+                const link = buildWhatsAppLink(to, message);
+                if (link) {
+                    window.open(link, '_blank', 'noopener,noreferrer');
+                    toast({ title: 'WhatsApp aberto', description: 'Envio manual.' });
+                    return;
+                }
+            }
+            const res = await fetch('/api/menuia/send-text', {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    to,
+                    message,
+                }),
+            });
+            if (res.ok) {
+                toast({ title: 'Enviado!', description: 'Mensagem enviada no WhatsApp da loja.' });
+            } else {
+                const link = buildWhatsAppLink(to, message);
+                if (link) {
+                    window.open(link, '_blank', 'noopener,noreferrer');
+                    toast({ title: 'WhatsApp aberto', description: 'Envio manual.' });
+                    return;
+                }
+                toast({ title: 'Erro', description: `Falha ao enviar (status ${res.status}).`, variant: 'destructive' });
+            }
+        } catch {
+            const link = buildWhatsAppLink(to, message);
+            if (link) {
+                window.open(link, '_blank', 'noopener,noreferrer');
+                toast({ title: 'WhatsApp aberto', description: 'Envio manual.' });
+                return;
+            }
+            toast({ title: 'Erro', description: 'Falha ao enviar mensagem.', variant: 'destructive' });
+        } finally {
+            setIsSending(false);
+        }
+    };
 
     return (
         <div className="fixed bottom-6 right-6 z-50">
-            <Button asChild className="rounded-full h-16 w-16 shadow-lg bg-green-600 hover:bg-green-700" aria-label="Atendimento no WhatsApp">
-                <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
-                    <WhatsAppIcon />
-                </a>
+            <Button
+                className="rounded-full h-16 w-16 shadow-lg bg-green-600 hover:bg-green-700"
+                aria-label="Atendimento no WhatsApp"
+                onClick={handleSend}
+                disabled={isSending}
+            >
+                <WhatsAppIcon />
             </Button>
         </div>
     );

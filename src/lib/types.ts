@@ -10,6 +10,8 @@ export type StoreSettings = {
     accessControlEnabled?: boolean;
     commercialHourStart?: string;
     commercialHourEnd?: string;
+    chargeSendTime?: string;
+    menuiaSendEnabled?: boolean;
     wapiInstance?: string;
     wapiToken?: string;
 };

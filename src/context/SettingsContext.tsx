@@ -22,6 +22,8 @@ const initialSettings: StoreSettings = {
     accessControlEnabled: false,
     commercialHourStart: '08:00',
     commercialHourEnd: '18:00',
+    chargeSendTime: '09:00',
+    menuiaSendEnabled: true,
 };
 
 interface SettingsContextType {
@@ -54,7 +56,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
                 window.clearTimeout(timeoutId);
                 if (docSnap.exists()) {
-                    setSettings(docSnap.data() as StoreSettings);
+                    setSettings({ ...initialSettings, ...(docSnap.data() as StoreSettings) });
                 } else {
                     await setDoc(settingsRef, initialSettings);
                     setSettings(initialSettings);

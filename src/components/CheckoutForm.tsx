@@ -34,7 +34,7 @@ import { ToastAction } from '@/components/ui/toast';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { collection, getDocs, limit, query, where } from 'firebase/firestore';
 import { WhatsAppIcon } from '@/components/WhatsAppIcon';
-import { displayNumericCode } from '@/lib/utils';
+import { buildWhatsAppLink, displayNumericCode, toBrazilE164 } from '@/lib/utils';
 
 function isValidCPF(cpf: string) {
     if (typeof cpf !== 'string') return false;
@@ -207,13 +207,13 @@ export default function CheckoutForm() {
       return null;
   }
 
-  const openSupportWhatsApp = (cpf: string) => {
+  const openSupportWhatsApp = async (cpf: string) => {
     if (!settings.storePhone) {
       return;
     }
 
-    const storePhone = settings.storePhone.replace(/\D/g, '');
-    if (!storePhone) return;
+    const to = toBrazilE164(settings.storePhone);
+    if (!to) return;
 
     const message = [
       'Olá! Preciso de suporte para finalizar uma compra.',
@@ -221,9 +221,36 @@ export default function CheckoutForm() {
       'Apareceu que meu cadastro não está atualizado e não consigo prosseguir.',
     ].join('\n');
 
-    const encodedMessage = encodeURIComponent(message);
-    const webUrl = `https://wa.me/55${storePhone}?text=${encodedMessage}`;
-    window.open(webUrl, '_blank');
+    try {
+      const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+      if (!menuiaSendEnabled) {
+        const link = buildWhatsAppLink(to, message);
+        if (link) {
+          window.open(link, '_blank', 'noopener,noreferrer');
+          return;
+        }
+      }
+      const res = await fetch('/api/menuia/send-text', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ to, message }),
+      });
+      if (res.ok) {
+        toast({ title: 'Enviado!', description: 'Mensagem enviada no WhatsApp da loja.' });
+        return;
+      }
+    } catch {
+    }
+    const link = buildWhatsAppLink(to, message);
+    if (link) {
+      window.open(link, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    toast({
+      title: 'Erro',
+      description: 'Não foi possível enviar automaticamente pelo WhatsApp.',
+      variant: 'destructive',
+    });
   };
 
   const showBlockedCpfToast = (cpf: string) => {
@@ -424,14 +451,7 @@ export default function CheckoutForm() {
     try {
         const savedOrder = await addOrder(order, logAction, user);
         if (savedOrder) {
-          let whatsappOpened = false;
-
-          if (settings.wapiInstance && settings.wapiToken) {
-                // Not implemented, but this is where the W-API call would go
-                whatsappOpened = true;
-          } else if (settings.storePhone) {
-              const storePhone = settings.storePhone.replace(/\D/g, '');
-              const productLines = cartItemsWithDetails.flatMap((item) => {
+          const productLines = cartItemsWithDetails.flatMap((item) => {
                 const productCode = item.code || item.id;
                 const unitPrice = item.price;
                 const subtotal = item.price * item.quantity;
@@ -445,66 +465,99 @@ export default function CheckoutForm() {
                 ];
               });
 
-              if (productLines.length > 0) {
-                productLines.pop();
-              }
-
-              const customerPhones: string[] = [];
-              if (values.phone) customerPhones.push(values.phone);
-              if (values.phone2) customerPhones.push(values.phone2);
-              if (values.phone3) customerPhones.push(values.phone3);
-              const customerPhonesText = customerPhones.filter(Boolean).join(' / ');
-              const customerCode = displayNumericCode(savedOrder.customer.code || '-');
-              const orderObservation = values.observations?.trim() ? values.observations.trim() : '-';
-              const addressLine1 = `CEP: *${values.zip}*`;
-              const addressLine2 = values.address;
-              const addressLine3 = `N° ${values.number}${values.complement?.trim() ? ` (${values.complement.trim()})` : ''}`;
-              const addressLine4 = `${values.neighborhood} - ${values.city}/${values.state}`;
-              const orderId = displayNumericCode(savedOrder.id);
-              
-              const messageParts = [
-                  `Olá, realizei uma compra com o código *${orderId}*.`,
-                  '',
-                  `Cód. Cliente: *${customerCode}*`,
-                  '',
-                  '*Produtos:*',
-                  '',
-                  ...productLines,
-                  '',
-                  `Total do(s) produto(s): *${formatCurrency(total)}*`,
-                  `Observação: ${orderObservation}`,
-                  `Frete: Entregue`,
-                  `Valor Frete: Valor a combinar com o vendedor`,
-                  `Total da compra: *${formatCurrency(total)}*`,
-                  `Forma de pagamento na entrega: Crediário.`,
-                  '',
-                  '---------------------------',
-                  values.name,
-                  customerPhonesText,
-                  `CPF/CNPJ: *${values.cpf}*`,
-                  `Cód. Cliente: *${customerCode}*`,
-                  '*Meu endereço é:*',
-                  addressLine1,
-                  addressLine2,
-                  addressLine3,
-                  addressLine4,
-              ];
-
-              const message = messageParts.join('\n');
-              const encodedMessage = encodeURIComponent(message);
-              
-              const webUrl = `https://wa.me/55${storePhone}?text=${encodedMessage}`;
-              const win = window.open(webUrl, '_blank');
-              whatsappOpened = !!win;
+          if (productLines.length > 0) {
+            productLines.pop();
           }
 
-          if (!whatsappOpened) {
+          const customerPhones: string[] = [];
+          if (values.phone) customerPhones.push(values.phone);
+          if (values.phone2) customerPhones.push(values.phone2);
+          if (values.phone3) customerPhones.push(values.phone3);
+          const customerPhonesText = customerPhones.filter(Boolean).join(' / ');
+          const customerCode = displayNumericCode(savedOrder.customer.code || '-');
+          const orderObservation = values.observations?.trim() ? values.observations.trim() : '-';
+          const addressLine1 = `CEP: *${values.zip}*`;
+          const addressLine2 = values.address;
+          const addressLine3 = `N° ${values.number}${values.complement?.trim() ? ` (${values.complement.trim()})` : ''}`;
+          const addressLine4 = `${values.neighborhood} - ${values.city}/${values.state}`;
+          const orderId = displayNumericCode(savedOrder.id);
+
+          const storeMessageParts = [
+            `Novo pedido do catálogo: *${orderId}*`,
+            '',
+            `Cliente: *${values.name}*`,
+            `Telefones: ${customerPhonesText || '-'}`,
+            `CPF/CNPJ: *${values.cpf}*`,
+            `Cód. Cliente: *${customerCode}*`,
+            '',
+            '*Produtos:*',
+            '',
+            ...productLines,
+            '',
+            `Total do(s) produto(s): *${formatCurrency(total)}*`,
+            `Observação: ${orderObservation}`,
+            '',
+            '*Endereço:*',
+            addressLine1,
+            addressLine2,
+            addressLine3,
+            addressLine4,
+          ];
+
+          const customerFirstName = values.name.split(' ')[0] || values.name;
+          const customerMessageParts = [
+            `Olá, ${customerFirstName}!`,
+            `Recebemos seu pedido *${orderId}* no valor de *${formatCurrency(total)}*.`,
+            'Em breve nossa equipe entrará em contato para combinar a entrega e condições.',
+          ];
+
+          const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+          const storeTo = toBrazilE164(settings.storePhone);
+          const customerTo = toBrazilE164(values.phone);
+
+          if (!menuiaSendEnabled) {
+            const manualTo = storeTo || customerTo;
+            const manualMessage = storeTo ? storeMessageParts.join('\n') : customerMessageParts.join('\n');
+            const link = buildWhatsAppLink(manualTo, manualMessage);
+            if (link) {
+              window.open(link, '_blank', 'noopener,noreferrer');
+              toast({ title: 'WhatsApp aberto', description: 'Envio manual do pedido.' });
+            }
+          } else {
+            const sendMenuiaText = async (to: string, message: string) => {
+              try {
+                const res = await fetch('/api/menuia/send-text', {
+                  method: 'POST',
+                  headers: { 'content-type': 'application/json' },
+                  body: JSON.stringify({ to, message }),
+                });
+                if (res.ok) return true;
+              } catch {
+              }
+
+              const link = buildWhatsAppLink(to, message);
+              if (link) {
+                window.open(link, '_blank', 'noopener,noreferrer');
+                return true;
+              }
+              return false;
+            };
+
+          const sends: Promise<boolean>[] = [];
+          if (storeTo) sends.push(sendMenuiaText(storeTo, storeMessageParts.join('\n')));
+          if (customerTo) sends.push(sendMenuiaText(customerTo, customerMessageParts.join('\n')));
+
+            if (sends.length > 0) {
+            const results = await Promise.allSettled(sends);
+            const failed = results.some(r => r.status === 'rejected' || r.value === false);
+            if (failed) {
               toast({
-                  title: "Envie o pedido pelo WhatsApp",
-                  description: "Não foi possível abrir o WhatsApp. Para finalizar, permita a abertura do WhatsApp e envie o pedido para a loja.",
-                  variant: "destructive"
+                title: 'Aviso',
+                description: 'Não foi possível enviar alguma mensagem automática no WhatsApp.',
+                variant: 'destructive',
               });
-              return;
+            }
+          }
           }
 
           setLastOrder(savedOrder);

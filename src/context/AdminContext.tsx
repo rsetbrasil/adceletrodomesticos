@@ -844,14 +844,55 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       }
     }
 
-    const prefix = order.items && order.items.length > 0 ? 'PED' : 'REG';
-    const lastOrderWithPrefix = allOrders
-      .filter(o => o.id.startsWith(`${prefix}-`))
-      .map(o => parseInt(o.id.split('-')[1] || '0', 10))
-      .filter(n => !isNaN(n))
-      .sort((a,b) => b-a)[0] || 0;
-      
-    const orderId = `${prefix}-${String(lastOrderWithPrefix + 1).padStart(4, '0')}`;
+    const hasItems = !!(order.items && order.items.length > 0);
+
+    const reservedNumericCodes = new Set<string>();
+    allOrders.forEach((o) => {
+      const id = typeof o?.id === 'string' ? o.id.trim() : '';
+      if (!id) return;
+
+      if (/^\d+$/.test(id)) {
+        reservedNumericCodes.add(id);
+        return;
+      }
+
+      const pedMatch = id.match(/^PED-(\d+)$/);
+      if (pedMatch?.[1]) {
+        reservedNumericCodes.add(pedMatch[1]);
+      }
+    });
+
+    const maxNumericCode = Array.from(reservedNumericCodes)
+      .filter((id) => /^\d+$/.test(id) && id.length <= 6)
+      .map((id) => Number(id))
+      .filter((n) => Number.isFinite(n))
+      .sort((a, b) => b - a)[0] || 0;
+
+    let orderId = '';
+    if (hasItems) {
+      let next = maxNumericCode + 1;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const candidate = String(next).padStart(4, '0');
+        if (!reservedNumericCodes.has(candidate) && !allOrders.some((o) => o.id === candidate || o.id === `PED-${candidate}`)) {
+          orderId = candidate;
+          break;
+        }
+        next++;
+      }
+      if (!orderId) {
+        const fallback = String(Date.now() % 10000).padStart(4, '0');
+        orderId = reservedNumericCodes.has(fallback) ? String(Date.now() % 100000).padStart(5, '0') : fallback;
+      }
+    } else {
+      const lastReg = allOrders
+        .map((o) => (typeof o?.id === 'string' ? o.id.trim() : ''))
+        .map((id) => id.match(/^REG-(\d+)$/)?.[1])
+        .filter((n): n is string => !!n)
+        .map((n) => Number(n))
+        .filter((n) => Number.isFinite(n))
+        .sort((a, b) => b - a)[0] || 0;
+      orderId = `REG-${String(lastReg + 1).padStart(4, '0')}`;
+    }
 
     const customerToSave = order.customer ? { ...order.customer } : undefined;
     if (customerToSave && !customerToSave.code) {

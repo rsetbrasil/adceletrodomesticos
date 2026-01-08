@@ -14,7 +14,7 @@ import Logo from '@/components/Logo';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
 import { useSettings } from '@/context/SettingsContext';
-import { displayNumericCode } from '@/lib/utils';
+import { buildWhatsAppLink, displayNumericCode, toBrazilE164 } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
   if (typeof value !== 'number' || isNaN(value)) return 'R$ 0,00';
@@ -238,11 +238,41 @@ export default function SingleInstallmentPage() {
     pdf.save(`comprovante-${order.id}-${installment.installmentNumber}.pdf`);
 
     const customerName = order.customer.name.split(' ')[0];
-    const phone = order.customer.phone.replace(/\D/g, '');
     const message = `Olá ${customerName}, segue o extrato atualizado da sua parcela nº ${installment.installmentNumber} (pedido ${displayNumericCode(order.id)}).\n\nObrigado!\n*${settings.storeName}*`;
-    
-    const webUrl = `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
-    window.open(webUrl, '_blank');
+
+    const customerTo = toBrazilE164(order.customer.phone);
+    if (customerTo) {
+      const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+      try {
+        if (!menuiaSendEnabled) {
+          const link = buildWhatsAppLink(customerTo, message);
+          if (link) {
+            window.open(link, '_blank', 'noopener,noreferrer');
+          }
+          return;
+        }
+        const res = await fetch('/api/menuia/send-text', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ to: customerTo, message }),
+        });
+        if (!res.ok) {
+          const link = buildWhatsAppLink(customerTo, message);
+          if (link) {
+            window.open(link, '_blank', 'noopener,noreferrer');
+            return;
+          }
+          toast({ title: 'Erro', description: `Falha ao enviar (status ${res.status}).`, variant: 'destructive' });
+        }
+      } catch {
+        const link = buildWhatsAppLink(customerTo, message);
+        if (link) {
+          window.open(link, '_blank', 'noopener,noreferrer');
+          return;
+        }
+        toast({ title: 'Erro', description: 'Falha ao enviar mensagem.', variant: 'destructive' });
+      }
+    }
 
     toast({
         title: "Passo 1/2: PDF Gerado!",

@@ -54,7 +54,7 @@ import { WhatsAppIcon } from '@/components/WhatsAppIcon';
 import { useSettings } from '@/context/SettingsContext';
 import Logo from '@/components/Logo';
 import { Textarea } from '@/components/ui/textarea';
-import { cn, displayNumericCode } from '@/lib/utils';
+import { buildWhatsAppLink, cn, displayNumericCode, toBrazilE164 } from '@/lib/utils';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
@@ -483,26 +483,73 @@ export default function OrdersAdminPage() {
     emptyTrash(logAction, user);
   }
   
-  const handleSendWhatsAppReminder = (order: Order, installment: Installment) => {
-    const customerName = order.customer.name.split(' ')[0];
-    const customerPhone = order.customer.phone.replace(/\D/g, '');
+  const handleSendWhatsAppReminder = async (order: Order, installment: Installment) => {
     const dueDate = format(parseISO(installment.dueDate), 'dd/MM/yyyy', { locale: ptBR });
-    const amount = formatCurrency(installment.amount - (installment.paidAmount || 0));
-    const productNames = order.items.map(item => item.name).join(', ');
+    const pendingAmount = Math.max(0, (installment.amount || 0) - (installment.paidAmount || 0));
+
+    const orderCode = displayNumericCode(order.id) || order.id;
+    const customerFirstName = (order.customer.name || '').split(' ')[0] || order.customer.name;
+    const customerCode = displayNumericCode(order.customer.code) || '-';
+
+    const itemsLines = (order.items || []).map((item) => {
+      const productName = (item.name || '').trim();
+      const rawProductCode = (item as any).code || item.id;
+      const productCode = displayNumericCode(rawProductCode) || '-';
+      return `*${productName}* (Cód.: ${productCode})`;
+    });
     
-    const message = `Olá, ${customerName}! Passando para lembrar sobre a sua parcela do carnê (pedido ${displayNumericCode(order.id)}) referente a compra de *${productNames}*.
-
-Vencimento: *${dueDate}*
-Valor: *${amount}*
-
-Chave pix: ${settings.pixKey}
-Adriano Cavalcante de Oliveira
-Banco: Nubank 
-
-Não esqueça de enviar o comprovante!`;
+    const message = [
+      `Olá, ${customerFirstName}!`,
+      '',
+      `Lembrete de parcela do carnê (pedido ${orderCode}).`,
+      `Parcela: ${installment.installmentNumber}/${order.installments || '-'}`,
+      `Vencimento: *${dueDate}*`,
+      `Valor: *${formatCurrency(pendingAmount)}*`,
+      customerCode !== '-' ? `Cód. Cliente: ${customerCode}` : null,
+      '',
+      'Produtos:',
+      ...itemsLines,
+      '',
+      `Chave pix: ${settings.pixKey || '-'}`,
+      'Adriano Cavalcante de Oliveira',
+      'Banco: Nubank',
+      '',
+      'Não esqueça de enviar o comprovante!',
+      '',
+      settings.storeName ? `*${settings.storeName}*` : null,
+    ]
+      .filter((line) => line != null)
+      .join('\n');
     
-    const whatsappUrl = `https://wa.me/55${customerPhone}?text=${encodeURIComponent(message)}`;
-    window.open(whatsappUrl, '_blank');
+    const customerTo = toBrazilE164(order.customer.phone);
+    const menuiaSendEnabled = settings.menuiaSendEnabled ?? true;
+    if (customerTo && menuiaSendEnabled) {
+      try {
+        const res = await fetch('/api/menuia/send-text', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ to: customerTo, message }),
+        });
+        if (res.ok) {
+          toast({ title: 'Mensagem enviada!', description: 'Cobrança enviada no WhatsApp.' });
+          return;
+        }
+      } catch {
+      }
+    }
+    if (customerTo) {
+      const link = buildWhatsAppLink(customerTo, message);
+      if (link) {
+        window.open(link, '_blank', 'noopener,noreferrer');
+        toast({ title: 'WhatsApp aberto', description: 'Envio manual da cobrança.' });
+        return;
+      }
+    }
+    toast({
+      title: 'Erro',
+      description: 'Não foi possível enviar automaticamente pelo WhatsApp.',
+      variant: 'destructive',
+    });
   };
 
   const handlePrintOverdueReport = () => {
