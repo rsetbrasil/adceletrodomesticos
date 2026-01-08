@@ -23,7 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandList, CommandItem } from '@/components/ui/command';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Check, ChevronsUpDown, PlusCircle, ShoppingCart, Trash2, CalendarIcon, MinusCircle, FileText } from 'lucide-react';
-import { buildWhatsAppLink, cn, displayNumericCode, toBrazilE164 } from '@/lib/utils';
+import { buildWhatsAppLink, cn, displayNumericCode, extractDigits, toBrazilE164 } from '@/lib/utils';
 import type { CustomerInfo, User, Product, CartItem, Order, Installment } from '@/lib/types';
 import { addMonths, format, parse, isValid } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -170,10 +170,42 @@ export default function CreateOrderPage() {
   const [openProductPopover, setOpenProductPopover] = useState(false);
   
   const [openCustomerPopover, setOpenCustomerPopover] = useState(false);
+  const [customerSearch, setCustomerSearch] = useState('');
   
   const activeCustomers = useMemo(() => {
     return allCustomers.filter(c => !c.isDeleted);
   }, [allCustomers]);
+
+  const filteredCustomers = useMemo(() => {
+    const raw = customerSearch.trim();
+    if (!raw) return activeCustomers;
+    const q = raw.toLowerCase();
+    const qDigits = extractDigits(raw);
+
+    return activeCustomers.filter(c => {
+      const nameMatch = (c.name || '').toLowerCase().includes(q);
+      if (nameMatch) return true;
+      if (!qDigits) return false;
+      const cpfDigits = extractDigits(c.cpf);
+      const codeDigits = extractDigits(c.code);
+      const phoneDigits = extractDigits(c.phone);
+      const phone2Digits = extractDigits(c.phone2);
+      const phone3Digits = extractDigits(c.phone3);
+      return (
+        cpfDigits.includes(qDigits) ||
+        codeDigits.includes(qDigits) ||
+        phoneDigits.includes(qDigits) ||
+        phone2Digits.includes(qDigits) ||
+        phone3Digits.includes(qDigits)
+      );
+    });
+  }, [activeCustomers, customerSearch]);
+
+  useEffect(() => {
+    if (openCustomerPopover) {
+      setCustomerSearch('');
+    }
+  }, [openCustomerPopover]);
 
 
   const sellers = useMemo(() => {
@@ -489,34 +521,49 @@ export default function CreateOrderPage() {
                         </FormControl>
                       </PopoverTrigger>
                       <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
-                        <Command>
-                           <CommandInput 
+                        <div className="flex items-center gap-2 border-b px-3 py-2">
+                          <Input
+                            value={customerSearch}
+                            onChange={(e) => setCustomerSearch(e.target.value)}
                             placeholder="Buscar cliente por nome, CPF ou código..."
+                            className="h-9"
                           />
-                           <CommandList>
-                            <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
-                            <CommandGroup>
-                              {activeCustomers && activeCustomers.map(c => {
-                                const customerId = getCustomerKey(c);
-                                return (
-                                <CommandItem
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto p-1">
+                          {filteredCustomers.length === 0 ? (
+                            <div className="py-6 text-center text-sm text-muted-foreground">
+                              Nenhum cliente encontrado.
+                            </div>
+                          ) : (
+                            filteredCustomers.map((c) => {
+                              const customerId = getCustomerKey(c);
+                              const selected = customerId === field.value;
+                              return (
+                                <button
                                   key={customerId}
-                                  onSelect={() => {
+                                  type="button"
+                                  className={cn(
+                                    "flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                                    selected && "bg-accent text-accent-foreground"
+                                  )}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => {
                                     form.setValue("customerId", customerId, { shouldValidate: true });
                                     setOpenCustomerPopover(false);
                                   }}
                                 >
-                                  <Check className={cn("mr-2 h-4 w-4", customerId === field.value ? "opacity-100" : "opacity-0")} />
-                                  <div className="flex flex-col items-start text-left">
-                                      <span>{c.name}</span>
-                                      <span className="text-xs text-muted-foreground">{c.cpf || (c.code ? displayNumericCode(c.code) : c.phone)}</span>
+                                  <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                                  <div className="flex flex-col items-start">
+                                    <span>{c.name}</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {c.cpf || (c.code ? displayNumericCode(c.code) : c.phone)}
+                                    </span>
                                   </div>
-                                </CommandItem>
-                                )
-                              })}
-                            </CommandGroup>
-                          </CommandList>
-                        </Command>
+                                </button>
+                              );
+                            })
+                          )}
+                        </div>
                       </PopoverContent>
                     </Popover>
                     <FormMessage />
@@ -691,30 +738,46 @@ export default function CreateOrderPage() {
                         <PopoverContent 
                             className="w-[300px] p-0"
                         >
-                            <Command shouldFilter={false}>
-                                <CommandInput 
-                                        placeholder="Buscar por nome ou código..."
-                                        value={productSearch}
-                                        onValueChange={setProductSearch}
-                                />
-                                <CommandList>
-                                    <CommandEmpty>Nenhum produto encontrado.</CommandEmpty>
-                                    <CommandGroup>
-                                        {filteredProducts.map(p => (
-                                            <CommandItem
-                                                key={p.id}
-                                                onSelect={() => handleAddItem(p)}
-                                            >
-                                                <Check className={cn("mr-2 h-4 w-4", selectedItems.some(i => i.id === p.id) ? "opacity-100" : "opacity-0")} />
-                                                <div className="flex flex-col">
-                                                    <span className="font-semibold">{p.name}</span>
-                                                    <span className="text-xs text-muted-foreground">{p.code}</span>
-                                                </div>
-                                            </CommandItem>
-                                        ))}
-                                    </CommandGroup>
-                                </CommandList>
-                            </Command>
+                          <div className="flex items-center gap-2 border-b px-3 py-2">
+                            <Input
+                              value={productSearch}
+                              onChange={(e) => setProductSearch(e.target.value)}
+                              placeholder="Buscar por nome ou código..."
+                              className="h-9"
+                            />
+                          </div>
+                          <div className="max-h-[300px] overflow-y-auto p-1">
+                            {filteredProducts.length === 0 ? (
+                              <div className="py-6 text-center text-sm text-muted-foreground">
+                                Nenhum produto encontrado.
+                              </div>
+                            ) : (
+                              filteredProducts.map((p) => {
+                                const selected = selectedItems.some(i => i.id === p.id);
+                                return (
+                                  <button
+                                    key={p.id}
+                                    type="button"
+                                    className={cn(
+                                      "flex w-full items-center gap-2 rounded-sm px-2 py-2 text-left text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                                      selected && "bg-accent text-accent-foreground"
+                                    )}
+                                    onMouseDown={(e) => e.preventDefault()}
+                                    onClick={() => {
+                                      handleAddItem(p);
+                                      setOpenProductPopover(false);
+                                    }}
+                                  >
+                                    <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
+                                    <div className="flex flex-col items-start">
+                                      <span className="font-semibold">{p.name}</span>
+                                      <span className="text-xs text-muted-foreground">{p.code}</span>
+                                    </div>
+                                  </button>
+                                );
+                              })
+                            )}
+                          </div>
                         </PopoverContent>
                     </Popover>
                     <CustomProductForm onAdd={handleAddItem} />

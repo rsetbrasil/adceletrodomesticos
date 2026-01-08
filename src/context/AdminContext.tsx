@@ -67,6 +67,12 @@ const getMaxCustomerCodeNumber = (orders: Order[]) => {
   return max;
 };
 
+const normalizeProductCode = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const digits = value.replace(/\D/g, '');
+  return digits ? digits : undefined;
+};
+
 function recalculateInstallments(total: number, installmentsCount: number, orderId: string, firstDueDate: string): Installment[] {
     if (installmentsCount <= 0 || total < 0) return [];
     
@@ -165,6 +171,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const [avarias, setAvarias] = useState<Avaria[]>([]);
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const didMigrateCustomerCodesRef = useRef(false);
+  const didMigrateProductCodesRef = useRef(false);
 
   // Effect for fetching admin-specific data
   useEffect(() => {
@@ -263,6 +270,40 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
     commitChunks();
   }, [orders, user]);
+
+  useEffect(() => {
+    if (didMigrateProductCodesRef.current) return;
+    if (!user) return;
+    if (products.length === 0) return;
+
+    const updates: Array<{ productId: string; code: string }> = [];
+    products.forEach((p) => {
+      const normalized = normalizeProductCode(p.code);
+      if (!normalized) return;
+      if (p.code !== normalized) updates.push({ productId: p.id, code: normalized });
+    });
+
+    didMigrateProductCodesRef.current = true;
+    if (updates.length === 0) return;
+
+    const { db } = getClientFirebase();
+    const chunkSize = 450;
+    const commitChunks = async () => {
+      for (let i = 0; i < updates.length; i += chunkSize) {
+        const chunk = updates.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach(({ productId, code }) => {
+          batch.update(doc(db, 'products', productId), { code });
+        });
+        try {
+          await batch.commit();
+        } catch {
+        }
+      }
+    };
+
+    commitChunks();
+  }, [products, user]);
 
   // Memos for derived data, now living in AdminContext
   const customers = useMemo(() => {
@@ -455,13 +496,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       const newProductId = `prod-${Date.now()}`;
       
       const existingCodes = products
-        .map(p => p.code)
-        .filter((code): code is string => !!code && code.startsWith('ITEM-'))
-        .map(code => parseInt(code.replace('ITEM-', ''), 10))
-        .filter(num => !isNaN(num));
+        .map(p => normalizeProductCode(p.code))
+        .map(code => (code ? Number(code) : NaN))
+        .filter(num => Number.isFinite(num));
         
       const lastCodeNumber = existingCodes.length > 0 ? Math.max(...existingCodes) : 99;
-      const newProductCode = `ITEM-${lastCodeNumber + 1}`;
+      const newProductCode = String(lastCodeNumber + 1);
       
       const newProduct: Partial<Product> = {
         ...productData,
@@ -498,6 +538,13 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     
     if (!productToUpdate.promotionEndDate) {
         delete productToUpdate.promotionEndDate;
+    }
+
+    const normalizedCode = normalizeProductCode(productToUpdate.code);
+    if (normalizedCode) {
+      productToUpdate.code = normalizedCode;
+    } else if (productToUpdate.code != null) {
+      productToUpdate.code = deleteField() as unknown as string;
     }
     
     setDoc(productRef, productToUpdate, { merge: true }).then(() => {
