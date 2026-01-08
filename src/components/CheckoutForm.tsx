@@ -23,7 +23,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import type { Order, CustomerInfo } from '@/lib/types';
 import { addMonths } from 'date-fns';
-import { AlertTriangle, CreditCard, KeyRound, Trash2 } from 'lucide-react';
+import { AlertTriangle, CreditCard, KeyRound, Trash2, UserSquare } from 'lucide-react';
 import { useSettings } from '@/context/SettingsContext';
 import { useAdmin } from '@/context/AdminContext';
 import { useAuth } from '@/context/AuthContext';
@@ -109,6 +109,8 @@ export default function CheckoutForm() {
   const [isNewCustomer, setIsNewCustomer] = useState(true);
   const [blockedCpf, setBlockedCpf] = useState<string | null>(null);
   const [lastCpfSearched, setLastCpfSearched] = useState<string | null>(null);
+  const [customerSellerId, setCustomerSellerId] = useState<string | null>(null);
+  const [customerSellerName, setCustomerSellerName] = useState<string | null>(null);
   
   const form = useForm<z.infer<typeof checkoutSchema>>({
     resolver: zodResolver(checkoutSchema),
@@ -329,6 +331,9 @@ export default function CheckoutForm() {
       .filter(o => !o.customer?.isDeleted);
 
     if (orders.length === 0) {
+      setIsNewCustomer(true);
+      setCustomerSellerId(null);
+      setCustomerSellerName(null);
       return;
     }
 
@@ -338,6 +343,12 @@ export default function CheckoutForm() {
     if (!customer) {
       return;
     }
+
+    setIsNewCustomer(false);
+    const sellerIdCandidate = (customer.sellerId || latestOrder.sellerId || '').trim();
+    const sellerNameCandidate = (customer.sellerName || latestOrder.sellerName || '').trim();
+    setCustomerSellerId(sellerIdCandidate ? sellerIdCandidate : null);
+    setCustomerSellerName(sellerNameCandidate ? sellerNameCandidate : null);
 
     form.setValue('name', customer.name || '');
     form.setValue('cpf', formatCpf(customer.cpf || normalizedCpf));
@@ -364,6 +375,8 @@ export default function CheckoutForm() {
     try {
       const normalizedCpf = cpfRaw.replace(/\D/g, '');
       if (blockedCpf && normalizedCpf === blockedCpf) {
+        setCustomerSellerId(null);
+        setCustomerSellerName(null);
         showBlockedCpfToast(blockedCpf);
         form.setError('cpf', { type: 'manual', message: 'Cadastro não atualizado. Não é possível prosseguir.' });
         return;
@@ -371,6 +384,8 @@ export default function CheckoutForm() {
 
       const isBlocked = await checkCpfIsBlocked(cpfRaw);
       if (isBlocked) {
+        setCustomerSellerId(null);
+        setCustomerSellerName(null);
         showBlockedCpfToast(cpfRaw.replace(/\D/g, ''));
         form.setError('cpf', { type: 'manual', message: 'Cadastro não atualizado. Não é possível prosseguir.' });
       } else {
@@ -412,6 +427,10 @@ export default function CheckoutForm() {
       state: values.state,
       observations: values.observations,
     };
+    if (!isNewCustomer) {
+      if (customerSellerId) customerData.sellerId = customerSellerId;
+      if (customerSellerName) customerData.sellerName = customerSellerName;
+    }
     
     // The logic to check for existing customer and assign password is now inside `addOrder`
     // to avoid loading all orders on the client-side.
@@ -481,6 +500,9 @@ export default function CheckoutForm() {
           const addressLine3 = `N° ${values.number}${values.complement?.trim() ? ` (${values.complement.trim()})` : ''}`;
           const addressLine4 = `${values.neighborhood} - ${values.city}/${values.state}`;
           const orderId = displayNumericCode(savedOrder.id);
+          const sellerText =
+            savedOrder.customer.sellerName ||
+            (savedOrder.customer.sellerId ? `ID: ${savedOrder.customer.sellerId}` : '');
 
           const storeMessageParts = [
             `Novo pedido do catálogo: *${orderId}*`,
@@ -489,6 +511,7 @@ export default function CheckoutForm() {
             `Telefones: ${customerPhonesText || '-'}`,
             `CPF/CNPJ: *${values.cpf}*`,
             `Cód. Cliente: *${customerCode}*`,
+            ...(sellerText ? [`Vendedor: *${sellerText}*`] : []),
             '',
             '*Produtos:*',
             '',
@@ -508,6 +531,7 @@ export default function CheckoutForm() {
           const customerMessageParts = [
             `Olá, ${customerFirstName}!`,
             `Recebemos seu pedido *${orderId}* no valor de *${formatCurrency(total)}*.`,
+            ...(sellerText ? [`Vendedor responsável: *${sellerText}*.`] : []),
             'Em breve nossa equipe entrará em contato para combinar a entrega e condições.',
           ];
 
@@ -677,6 +701,15 @@ export default function CheckoutForm() {
                     <FormField control={form.control} name="phone3" render={({ field }) => ( <FormItem><FormLabel>Telefone 3 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={e => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
                     <FormField control={form.control} name="email" render={({ field }) => ( <FormItem className="md:col-span-2"><FormLabel>Email (Opcional)</FormLabel><FormControl><Input placeholder="seu@email.com" {...field} /></FormControl><FormMessage /></FormItem> )} />
                 </div>
+                {(customerSellerName || customerSellerId) && (
+                  <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+                    <div className="flex items-center gap-2">
+                      <UserSquare className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium">Vendedor responsável:</span>
+                      <span>{customerSellerName || `ID: ${customerSellerId}`}</span>
+                    </div>
+                  </div>
+                )}
                 <div className="p-3 bg-blue-500/10 text-blue-800 rounded-lg text-sm">
                     <p><strong>Atenção:</strong> Se este for seu primeiro pedido, a senha de acesso para a Área do Cliente será os <strong>6 primeiros dígitos do seu CPF</strong>.</p>
                 </div>

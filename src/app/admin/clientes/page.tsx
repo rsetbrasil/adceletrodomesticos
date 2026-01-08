@@ -6,6 +6,7 @@ import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, DragEven
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAdmin, useAdminData } from '@/context/AdminContext';
+import { useData } from '@/context/DataContext';
 import type { Order, CustomerInfo, Installment, Attachment, Payment, User } from '@/lib/types';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button, buttonVariants } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Calendar } from '@/components/ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { buildWhatsAppLink, cn, displayNumericCode, extractDigits, toBrazilE164 } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/context/AuthContext';
@@ -111,7 +113,8 @@ const resizeImage = (file: File, MAX_WIDTH = 1920, MAX_HEIGHT = 1080): Promise<s
 export default function CustomersAdminPage() {
   const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addOrder, deleteCustomer, restoreCustomer } = useAdmin();
   const { customers, customerOrders, customerFinancials } = useAdminData();
-  const { user } = useAuth();
+  const { products } = useData();
+  const { user, users } = useAuth();
   const { settings } = useSettings();
   const { logAction } = useAudit();
   const { toast } = useToast();
@@ -212,6 +215,13 @@ export default function CustomersAdminPage() {
       const customerKey = getCustomerKey(selectedCustomer);
       return customerFinancials[customerKey] || { totalComprado: 0, totalPago: 0, saldoDevedor: 0 };
   }, [selectedCustomer, customerFinancials]);
+
+  const sellers = useMemo(() => {
+    return (users || [])
+      .filter((u) => u.role === 'vendedor' || u.role === 'gerente' || u.role === 'admin')
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [users]);
 
   const canDeleteCustomer = user?.role === 'admin' || user?.role === 'gerente';
   
@@ -399,12 +409,24 @@ export default function CustomersAdminPage() {
     }
   };
 
+  const handleSellerChange = (value: string) => {
+    if (!value || value === '__none__') {
+      setEditedInfo((prev) => ({ ...prev, sellerId: '', sellerName: '' }));
+      return;
+    }
+    const sellerName = sellers.find((s) => s.id === value)?.name || '';
+    setEditedInfo((prev) => ({ ...prev, sellerId: value, sellerName }));
+  };
+
   const handleSaveChanges = () => {
     if (selectedCustomer && editedInfo && user) {
       const updatedCustomerData = { ...selectedCustomer, ...editedInfo };
       // Se a senha estiver vazia, não a envie na atualização, mantendo a antiga
       if (editedInfo.password === '') {
           delete updatedCustomerData.password;
+      }
+      if (editedInfo.sellerId && !updatedCustomerData.sellerName) {
+          updatedCustomerData.sellerName = sellers.find((s) => s.id === editedInfo.sellerId)?.name;
       }
 
       updateCustomer(selectedCustomer, updatedCustomerData, logAction, user);
@@ -449,9 +471,17 @@ export default function CustomersAdminPage() {
         toast({ title: 'Erro', description: 'Um cliente com este CPF já existe.', variant: 'destructive' });
         return;
     }
+
+    const selectedSeller =
+      (customerData.sellerId ? sellers.find((s) => s.id === customerData.sellerId) : undefined) || user;
+    const customerWithSeller: CustomerInfo = {
+      ...customerData,
+      sellerId: selectedSeller.id,
+      sellerName: selectedSeller.name,
+    };
     
     const newCustomerOrder: Partial<Order> & { firstDueDate: Date } = {
-      customer: { ...customerData, password: customerData.cpf?.substring(0, 6) },
+      customer: { ...customerWithSeller, password: customerWithSeller.cpf?.substring(0, 6) },
       items: [],
       total: 0,
       installments: 0,
@@ -461,8 +491,8 @@ export default function CustomersAdminPage() {
       status: 'Excluído', // It's a registration-only "order"
       paymentMethod: 'Dinheiro',
       installmentDetails: [],
-      sellerId: user.id,
-      sellerName: user.name,
+      sellerId: selectedSeller.id,
+      sellerName: selectedSeller.name,
       source: 'admin',
     };
 
@@ -481,7 +511,8 @@ export default function CustomersAdminPage() {
 
     const itemsLines = (order.items || []).map((item) => {
       const productName = (item.name || '').trim();
-      const rawProductCode = (item as any).code || item.id;
+      const product = products.find((p) => p.id === item.id);
+      const rawProductCode = (item as any).code || product?.code || item.id;
       const productCode = displayNumericCode(rawProductCode) || '-';
       return `*${productName}* (Cód.: ${productCode})`;
     });
@@ -744,6 +775,13 @@ export default function CustomersAdminPage() {
                             <strong className="text-muted-foreground font-mono text-xs">CPF</strong>
                             <span>{selectedCustomer.cpf || 'Não informado'}</span>
                         </div>
+                        <div className="flex items-center gap-2">
+                            <UserSquare className="h-4 w-4 text-muted-foreground" />
+                            <strong className="text-muted-foreground font-mono text-xs">Vendedor</strong>
+                            <span>
+                                {selectedCustomer.sellerName || (selectedCustomer.sellerId ? `ID: ${selectedCustomer.sellerId}` : 'Sem vendedor')}
+                            </span>
+                        </div>
                         {selectedCustomer.code && (
                             <div className="flex items-center gap-2">
                                 <KeyRound className="h-4 w-4 text-muted-foreground" />
@@ -811,13 +849,15 @@ export default function CustomersAdminPage() {
                                 order.installmentDetails.every(inst => inst.status === 'Pago');
                             
                             const isPaidOff = allInstallmentsPaid || (order.paymentMethod && ['Pix', 'Dinheiro'].includes(order.paymentMethod));
-                            const productNames = order.items
+                            const productNames = (order.items || [])
                               .map((item) => {
-                                const rawProductCode = (item as any).code || item.id;
+                                const productName = (item.name || '').trim();
+                                const product = products.find((p) => p.id === item.id);
+                                const rawProductCode = (item as any).code || product?.code || item.id;
                                 const productCode = displayNumericCode(rawProductCode) || '-';
-                                return `${item.name} (Cód.: ${productCode})`;
+                                return `${productName} (Cód.: ${productCode})`;
                               })
-                              .join(', ');
+                              .join('\n');
 
                             return (
                                 <AccordionItem value={order.id} key={order.id} className="border-b-0 rounded-lg border bg-background">
@@ -825,7 +865,7 @@ export default function CustomersAdminPage() {
                                         <div className="flex justify-between items-center w-full">
                                             <div className="text-left space-y-1">
                                                 <p className="font-bold">Pedido: <span className="font-mono">{displayNumericCode(order.id)}</span></p>
-                                                <p className="text-xs text-muted-foreground italic truncate max-w-xs">{productNames}</p>
+                                                <p className="text-xs text-muted-foreground italic whitespace-pre-line break-words">{productNames}</p>
                                                 <p className="text-sm text-muted-foreground">{format(new Date(order.date), "dd/MM/yyyy", { locale: ptBR })}</p>
                                             </div>
                                             <div className="text-right">
@@ -1125,6 +1165,20 @@ export default function CustomersAdminPage() {
                               maxLength={14}
                             />
                         </div>
+                        <div className="md:col-span-2">
+                            <Label>Vendedor</Label>
+                            <Select value={(editedInfo.sellerId as string) || '__none__'} onValueChange={handleSellerChange}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecione o vendedor responsável" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="__none__">Sem vendedor</SelectItem>
+                                    {sellers.map((s) => (
+                                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
                     </div>
                     <div className="grid md:grid-cols-2 gap-4">
                         <div>
@@ -1221,7 +1275,7 @@ export default function CustomersAdminPage() {
                         Preencha as informações abaixo para adicionar um novo cliente ao sistema.
                     </DialogDescription>
                 </DialogHeader>
-                <CustomerForm onSave={handleAddCustomer} onCancel={() => setIsAddCustomerDialogOpen(false)} />
+                <CustomerForm onSave={handleAddCustomer} onCancel={() => setIsAddCustomerDialogOpen(false)} sellers={sellers} />
             </DialogContent>
         </Dialog>
 

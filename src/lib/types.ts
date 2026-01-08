@@ -74,6 +74,8 @@ export type CustomerInfo = {
   state: string;
   password?: string;
   observations?: string;
+  sellerId?: string;
+  sellerName?: string;
   isDeleted?: boolean;
   deletedAt?: string;
   deletedBy?: string;

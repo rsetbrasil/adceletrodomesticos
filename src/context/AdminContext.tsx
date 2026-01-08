@@ -971,6 +971,37 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     }
 
     const customerToSave = order.customer ? { ...order.customer } : undefined;
+    const customerKey = customerToSave
+      ? customerToSave.cpf
+        ? customerToSave.cpf.replace(/\D/g, '')
+        : `${customerToSave.name}-${customerToSave.phone}`
+      : '';
+
+    const existingCustomer = customerKey
+      ? allOrders
+          .filter((o) => {
+            const oKey = o.customer?.cpf ? o.customer.cpf.replace(/\D/g, '') : `${o.customer?.name}-${o.customer?.phone}`;
+            return oKey === customerKey && !o.customer?.isDeleted;
+          })
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.customer
+      : undefined;
+
+    if (customerToSave) {
+      const wantsClearSeller = customerToSave.sellerId === '';
+      const hasSellerId = typeof customerToSave.sellerId === 'string' && customerToSave.sellerId.trim() !== '';
+
+      if (!wantsClearSeller && !hasSellerId && existingCustomer?.sellerId) {
+        customerToSave.sellerId = existingCustomer.sellerId;
+        customerToSave.sellerName = existingCustomer.sellerName;
+      }
+
+      if (wantsClearSeller) {
+        delete customerToSave.sellerId;
+        delete customerToSave.sellerName;
+      } else if (customerToSave.sellerId && !customerToSave.sellerName) {
+        customerToSave.sellerName = users.find((u) => u.id === customerToSave.sellerId)?.name || undefined;
+      }
+    }
     if (customerToSave && !customerToSave.code) {
       const key = customerToSave.cpf ? customerToSave.cpf.replace(/\D/g, '') : `${customerToSave.name}-${customerToSave.phone}`;
 
@@ -1025,12 +1056,42 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       'Sistema';
     const createdById = order.createdById || user?.id || (order.source === 'catalogo' ? 'catalogo' : undefined);
 
+    const sellerIdFromOrder = typeof order.sellerId === 'string' && order.sellerId.trim() ? order.sellerId.trim() : '';
+    const sellerIdFromUser = user?.id || '';
+    const sellerIdFromCustomer =
+      typeof customerToSave?.sellerId === 'string' && customerToSave.sellerId.trim() ? customerToSave.sellerId.trim() : '';
+    const sellerIdToSave =
+      sellerIdFromOrder ||
+      (order.source === 'catalogo'
+        ? sellerIdFromCustomer || sellerIdFromUser
+        : sellerIdFromUser || sellerIdFromCustomer) ||
+      '';
+
+    const sellerNameFromOrder = typeof order.sellerName === 'string' && order.sellerName.trim() ? order.sellerName.trim() : '';
+    const sellerNameFromUser = user?.name || '';
+    const sellerNameFromCustomer =
+      typeof customerToSave?.sellerName === 'string' && customerToSave.sellerName.trim() ? customerToSave.sellerName.trim() : '';
+    const sellerNameToSave =
+      sellerNameFromOrder ||
+      (order.source === 'catalogo'
+        ? sellerNameFromCustomer || sellerNameFromUser
+        : sellerNameFromUser || sellerNameFromCustomer) ||
+      (sellerIdToSave ? users.find((u) => u.id === sellerIdToSave)?.name || 'Não atribuído' : 'Não atribuído');
+
+    const itemsToSave = (order.items || []).map((item) => {
+      const product = products.find((p) => p.id === item.id);
+      const productCode = product?.code || (typeof (item as any)?.code === 'string' ? (item as any).code : '');
+      if (!productCode) return item;
+      return { ...item, code: productCode };
+    });
+
     const orderToSave = {
         ...order,
         id: orderId,
         customer: customerToSave || order.customer,
-        sellerId: order.sellerId || user?.id || '',
-        sellerName: order.sellerName || user?.name || 'Não atribuído',
+        items: itemsToSave,
+        sellerId: sellerIdToSave,
+        sellerName: sellerNameToSave,
         createdAt,
         createdByName,
         createdById,
@@ -1291,7 +1352,28 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
             if (updatedCustomerData.password === undefined || updatedCustomerData.password === '') {
                 delete customerData.password;
             }
-            batch.update(doc(db, 'orders', order.id), { customer: customerData });
+            if (updatedCustomerData.sellerId === '') {
+                delete customerData.sellerId;
+                delete customerData.sellerName;
+            } else if (updatedCustomerData.sellerId && !customerData.sellerName) {
+                customerData.sellerName = users.find((u) => u.id === updatedCustomerData.sellerId)?.name || '';
+            }
+
+            const updateData: Record<string, unknown> = { customer: customerData };
+            if (order.source === 'catalogo') {
+                if (updatedCustomerData.sellerId === '') {
+                    updateData.sellerId = deleteField();
+                    updateData.sellerName = deleteField();
+                } else if (updatedCustomerData.sellerId) {
+                    updateData.sellerId = updatedCustomerData.sellerId;
+                    updateData.sellerName =
+                        updatedCustomerData.sellerName ||
+                        users.find((u) => u.id === updatedCustomerData.sellerId)?.name ||
+                        'Não atribuído';
+                }
+            }
+
+            batch.update(doc(db, 'orders', order.id), updateData);
         }
     });
 
@@ -1304,7 +1386,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
             operation: 'update',
         }));
     });
-  }, [orders, toast]);
+  }, [orders, toast, users]);
   
   const deleteCustomer = useCallback(async (customer: CustomerInfo, logAction: LogAction, user: User | null) => {
     if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {

@@ -16,6 +16,7 @@ import { cn, displayNumericCode } from '@/lib/utils';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
 import { useSettings } from '@/context/SettingsContext';
+import { useData } from '@/context/DataContext';
 
 
 const formatCurrency = (value: number) => {
@@ -23,7 +24,7 @@ const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 };
 
-const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings: StoreSettings, pixPayload: string | null }) => {
+const CarnetContent = ({ order, settings, pixPayload, products }: { order: Order; settings: StoreSettings, pixPayload: string | null; products: { id: string; code?: string; name: string }[] }) => {
     
     const subtotal = useMemo(() => order.items.reduce((acc, item) => acc + (item.price * item.quantity), 0), [order.items]);
     const valorFinanciado = order.total;
@@ -93,7 +94,14 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
                     <div className="col-span-2">
                         <p className="text-xs print:text-[9px] print-default:text-[8px] print-a4:text-[10px] text-muted-foreground">PRODUTOS</p>
                         <p className="font-semibold">
-                          {order.items.map((item) => `${item.name} (Cód.: ${displayNumericCode(item.id)})`).join(', ')}
+                          {order.items
+                            .map((item) => {
+                              const itemCode = typeof (item as any)?.code === 'string' ? (item as any).code : '';
+                              const productCode = itemCode || products.find((p) => p.id === item.id)?.code || '';
+                              const codeToDisplay = displayNumericCode(productCode || item.id);
+                              return `${item.name} (Cód.: ${codeToDisplay || '-'})`;
+                            })
+                            .join(', ')}
                         </p>
                     </div>
                 </div>
@@ -182,6 +190,7 @@ const CarnetContent = ({ order, settings, pixPayload }: { order: Order; settings
 export default function CarnetPage() {
   const params = useParams();
   const { settings, isLoading: isSettingsLoading } = useSettings();
+  const { products } = useData();
   const [order, setOrder] = useState<Order | null>(null);
   const [isOrderLoading, setIsOrderLoading] = useState(true);
 
@@ -297,10 +306,10 @@ export default function CarnetPage() {
         
         <main className="w-full bg-white p-6 print:p-0 print:shadow-none print-default:grid print-default:grid-cols-2 print-default:gap-x-4 print-a4:block">
             <div className="print-default:border-r print-default:border-dashed print-default:border-black print-default:pr-4">
-                <CarnetContent order={order} settings={settings} pixPayload={pixPayload} />
+                <CarnetContent order={order} settings={settings} pixPayload={pixPayload} products={products} />
             </div>
             <div className="hidden print-default:block print-default:pl-4">
-                <CarnetContent order={order} settings={settings} pixPayload={pixPayload} />
+                <CarnetContent order={order} settings={settings} pixPayload={pixPayload} products={products} />
             </div>
         </main>
       </div>

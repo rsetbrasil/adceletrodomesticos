@@ -9,9 +9,10 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import type { CustomerInfo } from '@/lib/types';
+import type { CustomerInfo, User } from '@/lib/types';
 import { Save } from 'lucide-react';
 import { Textarea } from './ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 function isValidCPF(cpf: string) {
     if (typeof cpf !== 'string') return false;
@@ -31,6 +32,7 @@ const customerSchema = z.object({
   phone2: z.string().optional(),
   phone3: z.string().optional(),
   email: z.string().email('E-mail inválido.').optional().or(z.literal('')),
+  sellerId: z.string().optional().or(z.literal('')),
   zip: z.string().refine((value) => {
     const justDigits = value.replace(/\D/g, '');
     return justDigits.length === 8;
@@ -48,6 +50,7 @@ interface CustomerFormProps {
   onSave: (data: CustomerInfo) => Promise<void>;
   onCancel: () => void;
   customerToEdit?: CustomerInfo | null;
+  sellers?: User[];
 }
 
 const formatPhone = (value: string) => {
@@ -75,8 +78,9 @@ const formatCpf = (value: string) => {
   return `${digitsOnly.slice(0, 3)}.${digitsOnly.slice(3, 6)}.${digitsOnly.slice(6, 9)}-${digitsOnly.slice(9)}`;
 };
 
-export default function CustomerForm({ onSave, onCancel, customerToEdit }: CustomerFormProps) {
+export default function CustomerForm({ onSave, onCancel, customerToEdit, sellers }: CustomerFormProps) {
   const { toast } = useToast();
+  const NO_SELLER_VALUE = '__none__';
   
   const form = useForm<z.infer<typeof customerSchema>>({
     resolver: zodResolver(customerSchema),
@@ -87,6 +91,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit }: Custo
       phone2: '',
       phone3: '',
       email: '',
+      sellerId: '',
       zip: '',
       address: '',
       number: '',
@@ -127,9 +132,13 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit }: Custo
   
   async function onSubmit(values: z.infer<typeof customerSchema>) {
     const normalizedCpf = values.cpf?.replace(/\D/g, '') ?? '';
+    const normalizedSellerId = values.sellerId?.trim() || undefined;
+    const sellerName = normalizedSellerId ? sellers?.find((s) => s.id === normalizedSellerId)?.name : undefined;
     await onSave({
       ...values,
       cpf: normalizedCpf ? normalizedCpf : undefined,
+      sellerId: normalizedSellerId,
+      sellerName: sellerName || undefined,
     });
   }
 
@@ -143,6 +152,36 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit }: Custo
             <FormField control={form.control} name="phone2" render={({ field }) => ( <FormItem><FormLabel>Telefone 2 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={(e) => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
             <FormField control={form.control} name="phone3" render={({ field }) => ( <FormItem><FormLabel>Telefone 3 (Opcional)</FormLabel><FormControl><Input placeholder="(99) 99999-9999" {...field} onChange={(e) => field.onChange(formatPhone(e.target.value))} maxLength={15} /></FormControl><FormMessage /></FormItem> )} />
             <FormField control={form.control} name="email" render={({ field }) => ( <FormItem><FormLabel>Email (Opcional)</FormLabel><FormControl><Input placeholder="seu@email.com" {...field} /></FormControl><FormMessage /></FormItem> )} />
+            {sellers?.length ? (
+              <FormField
+                control={form.control}
+                name="sellerId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Vendedor</FormLabel>
+                    <Select
+                      onValueChange={(value) => field.onChange(value === NO_SELLER_VALUE ? '' : value)}
+                      value={field.value || NO_SELLER_VALUE}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione o vendedor responsável" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value={NO_SELLER_VALUE}>Sem vendedor</SelectItem>
+                        {sellers.map((s) => (
+                          <SelectItem key={s.id} value={s.id}>
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            ) : null}
         </div>
         <h4 className="text-lg font-semibold pt-4 border-t">Endereço</h4>
         <div className="grid grid-cols-1 md:grid-cols-6 gap-4">

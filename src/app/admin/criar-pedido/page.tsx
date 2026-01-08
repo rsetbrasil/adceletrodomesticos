@@ -419,7 +419,9 @@ export default function CreateOrderPage() {
             const customerFirstName = (savedOrder.customer.name || '').split(' ')[0] || savedOrder.customer.name;
 
             const itemsLines = (savedOrder.items || []).flatMap((item) => {
-              const productCode = displayNumericCode(item.id) || item.id;
+              const itemCode = typeof (item as any)?.code === 'string' ? (item as any).code : '';
+              const productCodeRaw = itemCode || allProducts.find((p) => p.id === item.id)?.code || item.id;
+              const productCode = displayNumericCode(productCodeRaw) || productCodeRaw;
               const unitPrice = item.price;
               const subtotal = item.price * item.quantity;
               return [
