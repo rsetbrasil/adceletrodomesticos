@@ -416,29 +416,34 @@ export default function MyCommissionsPage() {
                 </TabsList>
                 <TabsContent value="my_pending" className="mt-4">
                      <Card>
-                        <CardHeader>
-                            <CardTitle>Minhas Comissões a Receber</CardTitle>
-                            <CardDescription>Esta é a lista de todas as suas vendas concluídas cuja comissão ainda não foi paga.</CardDescription>
+                        <CardHeader className="p-4 sm:p-6">
+                            <CardTitle className="text-xl sm:text-2xl">Minhas Comissões a Receber</CardTitle>
+                            <CardDescription className="text-xs sm:text-sm">Esta é a lista de todas as suas vendas concluídas cuja comissão ainda não foi paga.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
                              <div className="rounded-md border overflow-x-auto">
-                                <Table>
+                                <Table className="text-xs sm:text-sm">
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Data da Venda</TableHead>
-                                            <TableHead>Pedido ID</TableHead>
-                                            <TableHead>Cliente</TableHead>
-                                            <TableHead className="text-right">Valor da Comissão</TableHead>
+                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Data da Venda</TableHead>
+                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Pedido ID</TableHead>
+                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
+                                            <TableHead className="h-9 px-2 text-right text-[11px] sm:h-12 sm:px-4 sm:text-sm">Valor da Comissão</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {myPendingCommissions.length > 0 ? (
                                             myPendingCommissions.map(order => (
                                                 <TableRow key={order.id}>
-                                                    <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                                                    <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
-                                                    <TableCell>{order.customer.name}</TableCell>
-                                                    <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
+                                                    <TableCell className="whitespace-nowrap p-2 sm:p-4">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                                    <TableCell
+                                                      className="font-mono whitespace-nowrap p-2 max-w-[12ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
+                                                      title={displayNumericCode(order.id)}
+                                                    >
+                                                      {displayNumericCode(order.id)}
+                                                    </TableCell>
+                                                    <TableCell className="p-2 sm:p-4">{order.customer.name}</TableCell>
+                                                    <TableCell className="p-2 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
                                                 </TableRow>
                                             ))
                                         ) : (
@@ -455,31 +460,36 @@ export default function MyCommissionsPage() {
                 {isManagerOrAdmin && (
                   <TabsContent value="team_pending" className="mt-4">
                     <Card>
-                      <CardHeader>
-                        <CardTitle>Comissões Pendentes (Equipe)</CardTitle>
-                        <CardDescription>Lista de todas as vendas concluídas de todos os vendedores, cuja comissão ainda não foi paga.</CardDescription>
+                      <CardHeader className="p-4 sm:p-6">
+                        <CardTitle className="text-xl sm:text-2xl">Comissões Pendentes (Equipe)</CardTitle>
+                        <CardDescription className="text-xs sm:text-sm">Lista de todas as vendas concluídas de todos os vendedores, cuja comissão ainda não foi paga.</CardDescription>
                       </CardHeader>
-                      <CardContent>
+                      <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
                         <div className="rounded-md border overflow-x-auto">
-                          <Table>
+                          <Table className="text-xs sm:text-sm">
                             <TableHeader>
                               <TableRow>
-                                <TableHead>Data da Venda</TableHead>
-                                <TableHead>Vendedor</TableHead>
-                                <TableHead>Pedido ID</TableHead>
-                                <TableHead>Cliente</TableHead>
-                                <TableHead className="text-right">Valor da Comissão</TableHead>
+                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Data da Venda</TableHead>
+                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Vendedor</TableHead>
+                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Pedido ID</TableHead>
+                                <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Cliente</TableHead>
+                                <TableHead className="h-9 px-2 text-right text-[11px] sm:h-12 sm:px-4 sm:text-sm">Valor da Comissão</TableHead>
                               </TableRow>
                             </TableHeader>
                             <TableBody>
                               {teamPendingCommissions.length > 0 ? (
                                 teamPendingCommissions.map(order => (
                                   <TableRow key={order.id}>
-                                    <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                                    <TableCell>{order.sellerName}</TableCell>
-                                    <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
-                                    <TableCell>{order.customer.name}</TableCell>
-                                    <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
+                                    <TableCell className="whitespace-nowrap p-2 sm:p-4">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                    <TableCell className="p-2 sm:p-4">{order.sellerName}</TableCell>
+                                    <TableCell
+                                      className="font-mono whitespace-nowrap p-2 max-w-[12ch] overflow-hidden text-ellipsis sm:max-w-none sm:p-4"
+                                      title={displayNumericCode(order.id)}
+                                    >
+                                      {displayNumericCode(order.id)}
+                                    </TableCell>
+                                    <TableCell className="p-2 sm:p-4">{order.customer.name}</TableCell>
+                                    <TableCell className="p-2 text-right font-semibold sm:p-4">{formatCurrency(order.commission || 0)}</TableCell>
                                   </TableRow>
                                 ))
                               ) : (
@@ -496,29 +506,29 @@ export default function MyCommissionsPage() {
                 )}
                 <TabsContent value="history" className="mt-4">
                      <Card>
-                        <CardHeader>
-                            <CardTitle>Meus Pagamentos Recebidos</CardTitle>
-                             <CardDescription>Histórico de todos os pagamentos de comissão que você já recebeu.</CardDescription>
+                        <CardHeader className="p-4 sm:p-6">
+                            <CardTitle className="text-xl sm:text-2xl">Meus Pagamentos Recebidos</CardTitle>
+                             <CardDescription className="text-xs sm:text-sm">Histórico de todos os pagamentos de comissão que você já recebeu.</CardDescription>
                         </CardHeader>
-                        <CardContent>
+                        <CardContent className="p-4 pt-0 sm:p-6 sm:pt-0">
                              <div className="rounded-md border overflow-x-auto">
-                                <Table>
+                                <Table className="text-xs sm:text-sm">
                                     <TableHeader>
                                         <TableRow>
-                                            <TableHead>Data do Pagamento</TableHead>
-                                            <TableHead>Período</TableHead>
-                                            <TableHead className="text-right">Valor Recebido</TableHead>
-                                            <TableHead className="text-right">Ação</TableHead>
+                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Data do Pagamento</TableHead>
+                                            <TableHead className="h-9 px-2 text-[11px] sm:h-12 sm:px-4 sm:text-sm">Período</TableHead>
+                                            <TableHead className="h-9 px-2 text-right text-[11px] sm:h-12 sm:px-4 sm:text-sm">Valor Recebido</TableHead>
+                                            <TableHead className="h-9 px-2 text-right text-[11px] sm:h-12 sm:px-4 sm:text-sm">Ação</TableHead>
                                         </TableRow>
                                     </TableHeader>
                                     <TableBody>
                                         {myPaidCommissions.length > 0 ? (
                                             myPaidCommissions.map(payment => (
                                                 <TableRow key={payment.id}>
-                                                    <TableCell className="whitespace-nowrap">{format(parseISO(payment.paymentDate), "dd/MM/yyyy")}</TableCell>
-                                                    <TableCell className="capitalize">{payment.period}</TableCell>
-                                                    <TableCell className="text-right font-semibold">{formatCurrency(payment.amount)}</TableCell>
-                                                    <TableCell className="text-right">
+                                                    <TableCell className="whitespace-nowrap p-2 sm:p-4">{format(parseISO(payment.paymentDate), "dd/MM/yyyy")}</TableCell>
+                                                    <TableCell className="p-2 capitalize sm:p-4">{payment.period}</TableCell>
+                                                    <TableCell className="p-2 text-right font-semibold sm:p-4">{formatCurrency(payment.amount)}</TableCell>
+                                                    <TableCell className="p-2 text-right sm:p-4">
                                                         <div className="flex justify-end gap-2">
                                                             <Button variant="outline" size="sm" asChild>
                                                                 <Link href={`/admin/comprovante-comissao/${payment.id}`}>
