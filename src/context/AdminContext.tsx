@@ -73,6 +73,29 @@ const normalizeProductCode = (value: unknown): string | undefined => {
   return digits ? digits : undefined;
 };
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+  if (typeof value !== 'object' || value === null) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+};
+
+const removeUndefinedDeep = <T,>(value: T): T => {
+  if (value instanceof Date) return value;
+
+  if (Array.isArray(value)) {
+    return value.map((item) => removeUndefinedDeep(item)) as unknown as T;
+  }
+
+  if (isPlainObject(value)) {
+    const entries = Object.entries(value)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => [k, removeUndefinedDeep(v)]);
+    return Object.fromEntries(entries) as T;
+  }
+
+  return value;
+};
+
 function recalculateInstallments(total: number, installmentsCount: number, orderId: string, firstDueDate: string): Installment[] {
     if (installmentsCount <= 0 || total < 0) return [];
     
@@ -1000,7 +1023,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       user?.name ||
       (order.source === 'catalogo' ? order.customer?.name : undefined) ||
       'Sistema';
-    const createdById = order.createdById || user?.id;
+    const createdById = order.createdById || user?.id || (order.source === 'catalogo' ? 'catalogo' : undefined);
 
     const orderToSave = {
         ...order,
@@ -1032,11 +1055,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         throw new Error(`Estoque insuficiente para um ou mais produtos.`);
       }
 
-      await setDoc(doc(db, 'orders', orderToSave.id), orderToSave);
+      const safeOrderToSave = removeUndefinedDeep(orderToSave);
+      await setDoc(doc(db, 'orders', safeOrderToSave.id), safeOrderToSave);
       
       const creator = user ? `por ${user.name}`: 'pelo cliente';
-      logAction('Criação de Pedido', `Novo pedido #${orderToSave.id} para ${orderToSave.customer.name} no valor de R$${orderToSave.total?.toFixed(2)} foi criado ${creator}.`, user);
-      return orderToSave;
+      logAction('Criação de Pedido', `Novo pedido #${safeOrderToSave.id} para ${safeOrderToSave.customer.name} no valor de R$${safeOrderToSave.total?.toFixed(2)} foi criado ${creator}.`, user);
+      return safeOrderToSave;
     } catch(e) {
         console.error("Failed to add order", e);
         if (e instanceof Error && e.message.startsWith('Estoque insuficiente')) {
