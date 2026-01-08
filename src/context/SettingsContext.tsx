@@ -18,7 +18,7 @@ const initialSettings: StoreSettings = {
     storeAddress: '',
     pixKey: '',
     storePhone: '',
-    logoUrl: '',
+    logoUrl: undefined,
     accessControlEnabled: false,
     commercialHourStart: '08:00',
     commercialHourEnd: '18:00',

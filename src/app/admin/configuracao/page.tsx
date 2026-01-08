@@ -279,7 +279,11 @@ export default function ConfiguracaoPage() {
   }
 
   function onSubmit(values: z.infer<typeof settingsSchema>) {
-    updateSettings(values);
+    const safeValues = { ...values };
+    if ((!safeValues.logoUrl || safeValues.logoUrl.trim() === '') && settings.logoUrl) {
+      safeValues.logoUrl = undefined;
+    }
+    updateSettings(safeValues);
   }
 
   const handleTestMenuiaSend = async () => {

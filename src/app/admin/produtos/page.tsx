@@ -10,7 +10,7 @@ import type { Product } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { MoreHorizontal, PlusCircle, Trash, Edit, PackageSearch, Eye, EyeOff } from 'lucide-react';
+import { MoreHorizontal, PlusCircle, Trash, Edit, PackageSearch, Eye, EyeOff, Search } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,8 @@ import ProductForm from '@/components/ProductForm';
 import { useAuth } from '@/context/AuthContext';
 import { useAudit } from '@/context/AuditContext';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { displayNumericCode } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -38,6 +40,7 @@ export default function ManageProductsPage() {
     const { products } = useData();
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [productToEdit, setProductToEdit] = useState<Product | null>(null);
+    const [searchText, setSearchText] = useState('');
     const { user } = useAuth();
     const { logAction } = useAudit();
 
@@ -55,6 +58,22 @@ export default function ManageProductsPage() {
         deleteProduct(productId, logAction, user);
     }
 
+    const normalizedSearch = searchText.trim().toLowerCase();
+    const filteredProducts = normalizedSearch
+        ? products.filter((product) => {
+            const haystacks = [
+                product.name,
+                product.code,
+                product.id,
+                product.category,
+                product.subcategory,
+            ]
+                .filter(Boolean)
+                .map(v => String(v).toLowerCase());
+            return haystacks.some(v => v.includes(normalizedSearch));
+        })
+        : products;
+
     return (
         <>
             <Card>
@@ -70,6 +89,19 @@ export default function ManageProductsPage() {
                 </CardHeader>
                 <CardContent>
                     {products.length > 0 ? (
+                        <div className="flex items-center gap-2 mb-4">
+                            <div className="relative w-full max-w-md">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                    value={searchText}
+                                    onChange={(e) => setSearchText(e.target.value)}
+                                    placeholder="Buscar por nome, código ou categoria..."
+                                    className="pl-9"
+                                />
+                            </div>
+                        </div>
+                    ) : null}
+                    {filteredProducts.length > 0 ? (
                         <div className="rounded-md border">
                             <Table>
                                 <TableHeader>
@@ -85,7 +117,7 @@ export default function ManageProductsPage() {
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
-                                    {products.map((product) => (
+                                    {filteredProducts.map((product) => (
                                         <TableRow key={product.id}>
                                             <TableCell>
                                                 <div className="relative h-12 w-12 rounded-md overflow-hidden bg-muted">
@@ -97,7 +129,7 @@ export default function ManageProductsPage() {
                                                     />
                                                 </div>
                                             </TableCell>
-                                            <TableCell className="font-mono text-xs">{product.code || '-'}</TableCell>
+                                            <TableCell className="font-mono text-xs">{displayNumericCode(product.code || product.id) || '-'}</TableCell>
                                             <TableCell className="font-medium">{product.name}</TableCell>
                                             <TableCell className="capitalize">{product.category}</TableCell>
                                             <TableCell className="text-right">{formatCurrency(product.price)}</TableCell>
@@ -145,8 +177,10 @@ export default function ManageProductsPage() {
                     ) : (
                         <div className="text-center py-16 text-muted-foreground border-2 border-dashed rounded-lg">
                             <PackageSearch className="mx-auto h-12 w-12" />
-                            <h3 className="mt-4 text-lg font-semibold">Nenhum produto cadastrado</h3>
-                            <p className="mt-1 text-sm">Adicione seu primeiro produto para começar a vender.</p>
+                            <h3 className="mt-4 text-lg font-semibold">{products.length > 0 ? 'Nenhum resultado' : 'Nenhum produto cadastrado'}</h3>
+                            <p className="mt-1 text-sm">
+                                {products.length > 0 ? 'Tente ajustar o termo de busca.' : 'Adicione seu primeiro produto para começar a vender.'}
+                            </p>
                         </div>
                     )}
                 </CardContent>
