@@ -286,7 +286,13 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     didMigrateProductCodesRef.current = true;
     if (updates.length === 0) return;
 
-    const { db } = getClientFirebase();
+    let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
+    try {
+      ({ db } = getClientFirebase());
+    } catch {
+      return;
+    }
+    if (!db) return;
     const chunkSize = 450;
     const commitChunks = async () => {
       for (let i = 0; i < updates.length; i += chunkSize) {

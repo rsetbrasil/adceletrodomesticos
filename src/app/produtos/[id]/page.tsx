@@ -18,6 +18,7 @@ import { useData } from '@/context/DataContext';
 import CountdownTimer from '@/components/CountdownTimer';
 import { getClientFirebase } from '@/lib/firebase-client';
 import { doc, getDoc } from 'firebase/firestore';
+import { displayNumericCode } from '@/lib/utils';
 
 const formatCurrency = (value: number) => {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -161,7 +162,7 @@ export default function ProductDetailPage() {
             {resolvedProduct.subcategory && <Badge variant="outline" className="capitalize w-fit">{resolvedProduct.subcategory}</Badge>}
           </div>
           <h1 className="text-3xl lg:text-4xl font-bold font-headline text-primary">{resolvedProduct.name}</h1>
-          {resolvedProduct.code && <p className="text-sm text-muted-foreground mt-2">Cód. Item: {resolvedProduct.code}</p>}
+          {resolvedProduct.code && <p className="text-sm text-muted-foreground mt-2">Cód. Item: {displayNumericCode(resolvedProduct.code)}</p>}
           <p className="text-muted-foreground mt-4 text-lg">{resolvedProduct.description}</p>
           
           {showCountdown && <CountdownTimer endDate={resolvedProduct.promotionEndDate!} />}

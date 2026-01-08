@@ -771,7 +771,7 @@ export default function CreateOrderPage() {
                                     <Check className={cn("h-4 w-4", selected ? "opacity-100" : "opacity-0")} />
                                     <div className="flex flex-col items-start">
                                       <span className="font-semibold">{p.name}</span>
-                                      <span className="text-xs text-muted-foreground">{p.code}</span>
+                                      <span className="text-xs text-muted-foreground">{displayNumericCode(p.code || p.id)}</span>
                                     </div>
                                   </button>
                                 );
