@@ -78,23 +78,38 @@ export default function MyCommissionsPage() {
     }
   }, [isManagerOrAdmin, requestedTab]);
   
+  const commissionsStartDate = useMemo(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  }, []);
+
   const myPendingCommissions = useMemo(() => {
     if (!user || !orders) return [];
     return orders
       .filter(o => {
         const isPending = o.status === 'Entregue' && typeof o.commission === 'number' && o.commission > 0 && !o.commissionPaid;
         if (!isPending) return false;
+        const orderDate = parseISO(o.date);
+        if (orderDate.getFullYear() === 2025) return false;
+        if (orderDate < commissionsStartDate) return false;
         return o.sellerId === user.id;
       })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [orders, user]);
+  }, [commissionsStartDate, orders, user]);
 
   const teamPendingCommissions = useMemo(() => {
     if (!orders || !isManagerOrAdmin) return [];
     return orders
-      .filter(o => o.status === 'Entregue' && typeof o.commission === 'number' && o.commission > 0 && !o.commissionPaid)
+      .filter(o => {
+        const isPending = o.status === 'Entregue' && typeof o.commission === 'number' && o.commission > 0 && !o.commissionPaid;
+        if (!isPending) return false;
+        const orderDate = parseISO(o.date);
+        if (orderDate.getFullYear() === 2025) return false;
+        if (orderDate < commissionsStartDate) return false;
+        return true;
+      })
       .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [orders, isManagerOrAdmin]);
+  }, [commissionsStartDate, isManagerOrAdmin, orders]);
 
   const myTotalPending = useMemo(() => {
     return myPendingCommissions.reduce((acc, order) => acc + (order.commission || 0), 0);

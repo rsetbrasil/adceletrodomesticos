@@ -682,12 +682,6 @@ export default function OrdersAdminPage() {
                             <Printer className="mr-2 h-4 w-4" />
                             Imprimir Relatório
                           </Button>
-                          <Button variant="outline" asChild>
-                            <Link href="/admin/minhas-comissoes?tab=reports">
-                              <Percent className="mr-2 h-4 w-4" />
-                              Relatório de Comissão
-                            </Link>
-                          </Button>
                           <Button variant="ghost" onClick={clearFilters}>
                               <X className="mr-2 h-4 w-4"/>
                               Limpar
