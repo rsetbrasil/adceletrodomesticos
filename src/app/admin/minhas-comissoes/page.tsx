@@ -19,6 +19,7 @@ import { displayNumericCode } from '@/lib/utils';
 import type { Order } from '@/lib/types';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useSearchParams } from 'next/navigation';
 
 
 const formatCurrency = (value: number) => {
@@ -45,16 +46,37 @@ type SellerSalesReport = {
 };
 
 export default function MyCommissionsPage() {
+  const searchParams = useSearchParams();
   const { reverseCommissionPayment } = useAdmin();
   const { orders, commissionPayments } = useAdminData();
   const { user, users } = useAuth();
   const { logAction } = useAudit();
 
   const isManagerOrAdmin = user?.role === 'admin' || user?.role === 'gerente';
+  const requestedTab = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (requestedTab === 'reports') return 'reports';
+    if (requestedTab === 'history') return 'history';
+    if (requestedTab === 'team_pending') return 'team_pending';
+    if (requestedTab === 'all_history') return 'all_history';
+    return 'my_pending';
+  });
   const [salesReportMonth, setSalesReportMonth] = useState<string>(() => String(new Date().getMonth() + 1).padStart(2, '0'));
   const [salesReportYear, setSalesReportYear] = useState<string>(() => String(new Date().getFullYear()));
   const [isSellerReportOpen, setIsSellerReportOpen] = useState(false);
   const [selectedSellerReport, setSelectedSellerReport] = useState<SellerSalesReport | null>(null);
+
+  useEffect(() => {
+    if (!requestedTab) return;
+    const allowedTabs = new Set(['my_pending', 'history', 'reports']);
+    if (isManagerOrAdmin) {
+      allowedTabs.add('team_pending');
+      allowedTabs.add('all_history');
+    }
+    if (allowedTabs.has(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [isManagerOrAdmin, requestedTab]);
   
   const myPendingCommissions = useMemo(() => {
     if (!user || !orders) return [];
@@ -257,6 +279,28 @@ export default function MyCommissionsPage() {
     handlePrintHtml(`Relatório de Vendas - ${selectedSellerReport.name} (${salesReportMonthLabel})`, contents);
   };
 
+  const mySalesReportOrders = useMemo(() => {
+    if (!user) return [];
+
+    return deliveredOrders
+      .filter(order => {
+        if (order.sellerId !== user.id) return false;
+        const orderDate = parseISO(order.date);
+        const yearMatches = String(orderDate.getFullYear()) === salesReportYear;
+        if (!yearMatches) return false;
+        if (salesReportMonth === 'all') return true;
+        const orderMonth = String(orderDate.getMonth() + 1).padStart(2, '0');
+        return orderMonth === salesReportMonth;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [deliveredOrders, salesReportMonth, salesReportYear, user]);
+
+  const mySalesReportTotals = useMemo(() => {
+    const totalSold = mySalesReportOrders.reduce((acc, order) => acc + (order.total || 0), 0);
+    const totalCommission = mySalesReportOrders.reduce((acc, order) => acc + (order.commission || 0), 0);
+    return { count: mySalesReportOrders.length, totalSold, totalCommission };
+  }, [mySalesReportOrders]);
+
   if (!user) {
     return <p>Carregando...</p>;
   }
@@ -336,13 +380,40 @@ export default function MyCommissionsPage() {
               </div>
             )}
 
-            <Tabs defaultValue="pending">
-                <TabsList>
-                    <TabsTrigger value="my_pending">{isManagerOrAdmin ? 'Minhas Pendentes' : 'Comissões Pendentes'}</TabsTrigger>
-                    <TabsTrigger value="history">Meus Pagamentos</TabsTrigger>
-                    {isManagerOrAdmin && <TabsTrigger value="team_pending">Pendentes da Equipe</TabsTrigger>}
-                    {isManagerOrAdmin && <TabsTrigger value="all_history">Histórico Geral</TabsTrigger>}
-                    {isManagerOrAdmin && <TabsTrigger value="reports">Relatórios</TabsTrigger>}
+            <Tabs value={activeTab} onValueChange={setActiveTab}>
+                <TabsList className={`w-full grid ${isManagerOrAdmin ? 'grid-cols-2' : 'grid-cols-3'} gap-1 h-auto sm:inline-flex sm:w-auto sm:h-10`}>
+                    <TabsTrigger value="my_pending" className="w-full whitespace-normal text-xs leading-tight sm:w-auto sm:text-sm sm:whitespace-nowrap">
+                      {isManagerOrAdmin ? (
+                        <>
+                          <span className="hidden sm:inline">Minhas Pendentes</span>
+                          <span className="sm:hidden">Minhas</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="hidden sm:inline">Comissões Pendentes</span>
+                          <span className="sm:hidden">Pendentes</span>
+                        </>
+                      )}
+                    </TabsTrigger>
+                    <TabsTrigger value="history" className="w-full whitespace-normal text-xs leading-tight sm:w-auto sm:text-sm sm:whitespace-nowrap">
+                      <span className="hidden sm:inline">Meus Pagamentos</span>
+                      <span className="sm:hidden">Pagamentos</span>
+                    </TabsTrigger>
+                    {isManagerOrAdmin && (
+                      <TabsTrigger value="team_pending" className="w-full whitespace-normal text-xs leading-tight sm:w-auto sm:text-sm sm:whitespace-nowrap">
+                        <span className="hidden sm:inline">Pendentes da Equipe</span>
+                        <span className="sm:hidden">Equipe</span>
+                      </TabsTrigger>
+                    )}
+                    {isManagerOrAdmin && (
+                      <TabsTrigger value="all_history" className="w-full whitespace-normal text-xs leading-tight sm:w-auto sm:text-sm sm:whitespace-nowrap">
+                        <span className="hidden sm:inline">Histórico Geral</span>
+                        <span className="sm:hidden">Geral</span>
+                      </TabsTrigger>
+                    )}
+                    <TabsTrigger value="reports" className="w-full whitespace-normal text-xs leading-tight sm:w-auto sm:text-sm sm:whitespace-nowrap">
+                      {isManagerOrAdmin ? 'Relatórios' : 'Relatório'}
+                    </TabsTrigger>
                 </TabsList>
                 <TabsContent value="my_pending" className="mt-4">
                      <Card>
@@ -351,7 +422,7 @@ export default function MyCommissionsPage() {
                             <CardDescription>Esta é a lista de todas as suas vendas concluídas cuja comissão ainda não foi paga.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                             <div className="rounded-md border">
+                             <div className="rounded-md border overflow-x-auto">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
@@ -365,8 +436,8 @@ export default function MyCommissionsPage() {
                                         {myPendingCommissions.length > 0 ? (
                                             myPendingCommissions.map(order => (
                                                 <TableRow key={order.id}>
-                                                    <TableCell>{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                                                    <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                                    <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
                                                     <TableCell>{order.customer.name}</TableCell>
                                                     <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
                                                 </TableRow>
@@ -390,7 +461,7 @@ export default function MyCommissionsPage() {
                         <CardDescription>Lista de todas as vendas concluídas de todos os vendedores, cuja comissão ainda não foi paga.</CardDescription>
                       </CardHeader>
                       <CardContent>
-                        <div className="rounded-md border">
+                        <div className="rounded-md border overflow-x-auto">
                           <Table>
                             <TableHeader>
                               <TableRow>
@@ -405,9 +476,9 @@ export default function MyCommissionsPage() {
                               {teamPendingCommissions.length > 0 ? (
                                 teamPendingCommissions.map(order => (
                                   <TableRow key={order.id}>
-                                    <TableCell>{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                    <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
                                     <TableCell>{order.sellerName}</TableCell>
-                                    <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
+                                    <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
                                     <TableCell>{order.customer.name}</TableCell>
                                     <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>
                                   </TableRow>
@@ -431,7 +502,7 @@ export default function MyCommissionsPage() {
                              <CardDescription>Histórico de todos os pagamentos de comissão que você já recebeu.</CardDescription>
                         </CardHeader>
                         <CardContent>
-                             <div className="rounded-md border">
+                             <div className="rounded-md border overflow-x-auto">
                                 <Table>
                                     <TableHeader>
                                         <TableRow>
@@ -445,7 +516,7 @@ export default function MyCommissionsPage() {
                                         {myPaidCommissions.length > 0 ? (
                                             myPaidCommissions.map(payment => (
                                                 <TableRow key={payment.id}>
-                                                    <TableCell>{format(parseISO(payment.paymentDate), "dd/MM/yyyy")}</TableCell>
+                                                    <TableCell className="whitespace-nowrap">{format(parseISO(payment.paymentDate), "dd/MM/yyyy")}</TableCell>
                                                     <TableCell className="capitalize">{payment.period}</TableCell>
                                                     <TableCell className="text-right font-semibold">{formatCurrency(payment.amount)}</TableCell>
                                                     <TableCell className="text-right">
@@ -503,7 +574,7 @@ export default function MyCommissionsPage() {
                                 <CardDescription>Histórico de todos os pagamentos de comissão para todos os vendedores.</CardDescription>
                             </CardHeader>
                             <CardContent>
-                                <div className="rounded-md border">
+                                <div className="rounded-md border overflow-x-auto">
                                     <Table>
                                         <TableHeader>
                                             <TableRow>
@@ -518,7 +589,7 @@ export default function MyCommissionsPage() {
                                             {commissionPayments && commissionPayments.length > 0 ? (
                                                 commissionPayments.sort((a,b) => parseISO(b.paymentDate).getTime() - parseISO(a.paymentDate).getTime()).map(payment => (
                                                     <TableRow key={payment.id}>
-                                                        <TableCell>{format(parseISO(payment.paymentDate), "dd/MM/yyyy")}</TableCell>
+                                                        <TableCell className="whitespace-nowrap">{format(parseISO(payment.paymentDate), "dd/MM/yyyy")}</TableCell>
                                                         <TableCell>{payment.sellerName}</TableCell>
                                                         <TableCell className="capitalize">{payment.period}</TableCell>
                                                         <TableCell className="text-right font-semibold">{formatCurrency(payment.amount)}</TableCell>
@@ -569,8 +640,8 @@ export default function MyCommissionsPage() {
                     </TabsContent>
                 )}
 
-                {isManagerOrAdmin && (
-                  <TabsContent value="reports" className="mt-4">
+                <TabsContent value="reports" className="mt-4">
+                  {isManagerOrAdmin ? (
                     <Card>
                       <CardHeader>
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -623,16 +694,16 @@ export default function MyCommissionsPage() {
                           <div className="text-sm text-muted-foreground">
                             <span className="font-medium text-foreground">{salesReportMonthLabel}</span>
                             <span className="mx-2">•</span>
-                            <span>{sellerReportTotals.totalSales} vendas</span>
+                            <span>Vendas: {sellerReportTotals.totalSales}</span>
                             <span className="mx-2">•</span>
-                            <span>{formatCurrency(sellerReportTotals.totalSold)}</span>
+                            <span>Total vendido: {formatCurrency(sellerReportTotals.totalSold)}</span>
                             <span className="mx-2">•</span>
-                            <span>{formatCurrency(sellerReportTotals.totalCommission)} comissão</span>
+                            <span>Comissão total: {formatCurrency(sellerReportTotals.totalCommission)}</span>
                           </div>
                         </div>
 
                         <div id="team-sales-report-content">
-                          <div className="rounded-md border">
+                          <div className="rounded-md border overflow-x-auto">
                             <Table>
                               <TableHeader>
                                 <TableRow>
@@ -675,8 +746,97 @@ export default function MyCommissionsPage() {
                         </div>
                       </CardContent>
                     </Card>
-                  </TabsContent>
-                )}
+                  ) : (
+                    <Card>
+                      <CardHeader>
+                        <div className="flex flex-col gap-3">
+                          <div>
+                            <CardTitle className="flex items-center gap-2">
+                              <BadgePercent className="h-5 w-5" />
+                              Meu Relatório de Vendas
+                            </CardTitle>
+                            <CardDescription>
+                              Vendas entregues no período selecionado, com total e comissão.
+                            </CardDescription>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                            <div className="w-full sm:w-[180px]">
+                              <Select value={salesReportYear} onValueChange={setSalesReportYear}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Ano" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableYearsForSalesReport.map(year => (
+                                    <SelectItem key={year} value={year}>{year}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="w-full sm:w-[220px]">
+                              <Select value={salesReportMonth} onValueChange={setSalesReportMonth}>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Mês" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {meses.map(mes => (
+                                    <SelectItem key={mes.value} value={mes.value}>{mes.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="text-sm text-muted-foreground">
+                            <span className="font-medium text-foreground">{salesReportMonthLabel}</span>
+                            <span className="mx-2">•</span>
+                            <span>Vendas: {mySalesReportTotals.count}</span>
+                            <span className="mx-2">•</span>
+                            <span>Total vendido: {formatCurrency(mySalesReportTotals.totalSold)}</span>
+                            <span className="mx-2">•</span>
+                            <span>Comissão total: {formatCurrency(mySalesReportTotals.totalCommission)}</span>
+                          </div>
+                        </div>
+
+                        <div id="my-sales-report-content">
+                          <div className="rounded-md border overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Data</TableHead>
+                                  <TableHead>Pedido</TableHead>
+                                  <TableHead>Cliente</TableHead>
+                                  <TableHead className="text-right">Valor</TableHead>
+                                  <TableHead className="text-right">Comissão</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {mySalesReportOrders.length > 0 ? (
+                                  mySalesReportOrders.map(order => (
+                                    <TableRow key={order.id}>
+                                      <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                                      <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
+                                      <TableCell>{order.customer.name}</TableCell>
+                                      <TableCell className="text-right font-semibold">{formatCurrency(order.total)}</TableCell>
+                                      <TableCell className="text-right tabular-nums">{formatCurrency(order.commission || 0)}</TableCell>
+                                    </TableRow>
+                                  ))
+                                ) : (
+                                  <TableRow>
+                                    <TableCell colSpan={5} className="h-24 text-center">Nenhuma venda entregue no período.</TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </TabsContent>
             </Tabs>
         </CardContent>
       </Card>
@@ -704,7 +864,7 @@ export default function MyCommissionsPage() {
                 <div className="text-base font-semibold tabular-nums">{formatCurrency(selectedSellerTotals.totalCommission)}</div>
               </div>
             </div>
-            <div className="rounded-md border max-h-[60vh] overflow-y-auto seller-report-table-wrapper">
+            <div className="rounded-md border max-h-[60vh] overflow-y-auto overflow-x-auto seller-report-table-wrapper">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -719,8 +879,8 @@ export default function MyCommissionsPage() {
                   {(selectedSellerReport?.orders.length ?? 0) > 0 ? (
                     selectedSellerReport?.orders.map(order => (
                       <TableRow key={order.id}>
-                        <TableCell>{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
-                        <TableCell className="font-mono">{displayNumericCode(order.id)}</TableCell>
+                        <TableCell className="whitespace-nowrap">{format(parseISO(order.date), "dd/MM/yyyy")}</TableCell>
+                        <TableCell className="font-mono whitespace-nowrap">{displayNumericCode(order.id)}</TableCell>
                         <TableCell>{order.customer.name}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(order.total)}</TableCell>
                         <TableCell className="text-right font-semibold">{formatCurrency(order.commission || 0)}</TableCell>

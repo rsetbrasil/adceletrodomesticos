@@ -616,7 +616,7 @@ export default function FinanceiroPage() {
                   </div>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -854,7 +854,7 @@ export default function FinanceiroPage() {
                     Lista de vendas para o vendedor <span className="font-bold">{selectedCommissionSeller?.name}</span> que compõem o total da comissão.
                 </DialogDescription>
             </DialogHeader>
-            <div className="rounded-md border max-h-[60vh] overflow-y-auto">
+            <div className="rounded-md border max-h-[60vh] overflow-auto">
                 <Table>
                     <TableHeader>
                         <TableRow>

@@ -8,7 +8,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { LogOut, Shield, Store, KeyRound, ChevronDown, Clock, Moon, Sun, Menu } from 'lucide-react';
 import AdminNav from "@/components/AdminNav";
 import { Button } from "@/components/ui/button";
-import { hasUserAccess } from "@/lib/permissions";
+import { ALL_SECTIONS, hasUserAccess } from "@/lib/permissions";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/context/PermissionsContext";
 import Link from "next/link";
@@ -150,7 +150,16 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
                     description: "Você não tem permissão para acessar esta página.",
                     variant: "destructive"
                 });
-                router.push('/admin');
+                const firstAllowed = ALL_SECTIONS.find((s) => hasUserAccess(user, s.id, permissions))?.id;
+                if (firstAllowed) {
+                    const targetPath = `/admin/${firstAllowed}`;
+                    if (pathname !== targetPath) {
+                        router.replace(targetPath);
+                    }
+                    return;
+                }
+
+                router.replace('/');
             }
         }
     }, [isLoading, permissionsLoading, settingsLoading, isAuthenticated, user, permissions, settings, router, pathname, toast, logout]);

@@ -220,10 +220,17 @@ export default function OrdersAdminPage() {
     if (!orders) return [];
     
     return orders.filter(o => {
-        const searchTerm = filters.search.toLowerCase();
+        const searchTerm = filters.search.toLowerCase().trim();
+        const searchDigits = searchTerm.replace(/\D/g, '');
+        const customerCode = o.customer.code || '';
+        const customerCodeLower = customerCode.toLowerCase();
+        const customerCodeDigits = displayNumericCode(customerCode);
+
         const searchMatch = !searchTerm ||
             o.id.toLowerCase().includes(searchTerm) ||
-            o.customer.name.toLowerCase().includes(searchTerm);
+            o.customer.name.toLowerCase().includes(searchTerm) ||
+            customerCodeLower.includes(searchTerm) ||
+            (searchDigits ? customerCodeDigits.includes(searchDigits) : false);
 
         const statusMatch = filters.status === 'all' || o.status === filters.status;
         
@@ -612,7 +619,7 @@ export default function OrdersAdminPage() {
                       <div className="flex flex-wrap gap-4 mb-6 p-4 border rounded-lg bg-muted/50">
                           <div className="flex-grow min-w-[200px]">
                               <Input 
-                                  placeholder="Buscar por ID ou cliente..."
+                                  placeholder="Buscar por ID, cliente ou código..."
                                   value={filters.search}
                                   onChange={(e) => handleFilterChange('search', e.target.value)}
                               />
@@ -674,6 +681,12 @@ export default function OrdersAdminPage() {
                           <Button variant="outline" onClick={handlePrintOverdueReport}>
                             <Printer className="mr-2 h-4 w-4" />
                             Imprimir Relatório
+                          </Button>
+                          <Button variant="outline" asChild>
+                            <Link href="/admin/minhas-comissoes?tab=reports">
+                              <Percent className="mr-2 h-4 w-4" />
+                              Relatório de Comissão
+                            </Link>
                           </Button>
                           <Button variant="ghost" onClick={clearFilters}>
                               <X className="mr-2 h-4 w-4"/>
