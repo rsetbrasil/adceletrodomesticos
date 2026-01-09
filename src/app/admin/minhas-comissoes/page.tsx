@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, Suspense } from 'react';
 import { useAdmin, useAdminData } from '@/context/AdminContext';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,7 +45,7 @@ type SellerSalesReport = {
   orders: Order[];
 };
 
-export default function MyCommissionsPage() {
+function MyCommissionsPageInner() {
   const searchParams = useSearchParams();
   const { reverseCommissionPayment } = useAdmin();
   const { orders, commissionPayments } = useAdminData();
@@ -990,4 +990,10 @@ export default function MyCommissionsPage() {
   );
 }
 
-    
+export default function MyCommissionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <MyCommissionsPageInner />
+    </Suspense>
+  );
+}

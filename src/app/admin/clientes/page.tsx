@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, DragEvent, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, ChangeEvent, DragEvent, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAdmin, useAdminData } from '@/context/AdminContext';
@@ -110,7 +110,7 @@ const resizeImage = (file: File, MAX_WIDTH = 1920, MAX_HEIGHT = 1080): Promise<s
     });
 };
 
-export default function CustomersAdminPage() {
+function CustomersAdminPageInner() {
   const { updateCustomer, recordInstallmentPayment, updateInstallmentDueDate, updateOrderDetails, reversePayment, importCustomers, addOrder, deleteCustomer, restoreCustomer } = useAdmin();
   const { customers, customerOrders, customerFinancials } = useAdminData();
   const { products } = useData();
@@ -1290,5 +1290,13 @@ export default function CustomersAdminPage() {
             />
         )}
     </>
+  );
+}
+
+export default function CustomersAdminPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomersAdminPageInner />
+    </Suspense>
   );
 }
