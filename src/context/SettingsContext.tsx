@@ -67,10 +67,7 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
-    const [settings, setSettings] = useState<StoreSettings>(() => ({
-        ...initialSettings,
-        ...loadCachedSettings(),
-    }));
+    const [settings, setSettings] = useState<StoreSettings>(initialSettings);
     const [isLoading, setIsLoading] = useState(true);
     const { toast } = useToast();
     const { logAction } = useAudit();
@@ -79,6 +76,12 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
     useEffect(() => {
         let unsubscribe: (() => void) | null = null;
+
+        const cached = loadCachedSettings();
+        if (cached.logoUrl || cached.storeName) {
+            setSettings((prev) => ({ ...prev, ...cached }));
+        }
+
         const timeoutId = window.setTimeout(() => {
             setIsLoading(false);
         }, 8000);
