@@ -2,7 +2,7 @@
 
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo, startTransition } from 'react';
 import { collection, onSnapshot, query, orderBy, getDocs, limit, startAfter } from 'firebase/firestore';
 import { usePathname } from 'next/navigation';
 import { getClientFirebase } from '@/lib/firebase-client';
@@ -305,6 +305,13 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             if (firstSnapshot.size === PUBLIC_PRODUCTS_PAGE_SIZE) {
               let allProducts = firstProducts;
               let lastDoc = firstSnapshot.docs[firstSnapshot.docs.length - 1];
+              let lastFlushAt = Date.now();
+
+              const commitProducts = (nextProducts: Product[]) => {
+                if (cancelled) return;
+                startTransition(() => setProducts(nextProducts));
+                saveArrayCacheToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(nextProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
+              };
 
               while (!cancelled) {
                 const nextSnapshot = await getDocs(query(
@@ -318,12 +325,17 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
                 const nextProducts = nextSnapshot.docs.map((d) => mapPublicProductDoc(d));
                 allProducts = allProducts.concat(nextProducts);
-                setProducts(allProducts);
-                saveArrayCacheToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(allProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
+                const now = Date.now();
+                if ((now - lastFlushAt) > 500) {
+                  lastFlushAt = now;
+                  commitProducts(allProducts);
+                }
 
                 if (nextSnapshot.size < PUBLIC_PRODUCTS_PAGE_SIZE) break;
                 lastDoc = nextSnapshot.docs[nextSnapshot.docs.length - 1];
               }
+
+              commitProducts(allProducts);
             }
           } else if (!hasCachedProducts) {
             if (timeoutId !== null) window.clearTimeout(timeoutId);

@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/context/PermissionsContext';
-import { hasUserAccess, ALL_SECTIONS } from '@/lib/permissions';
+import { hasUserAccess, ALL_SECTIONS, initialPermissions } from '@/lib/permissions';
+import type { RolePermissions } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useAdmin } from '@/context/AdminContext';
 
@@ -15,11 +16,22 @@ export default function AdminNav() {
   const { permissions } = usePermissions();
   const { chatSessions } = useAdmin();
 
-  if (!user || !permissions) {
+  if (!user) {
     return null;
   }
 
-  const accessibleNavItems = ALL_SECTIONS.filter(item => hasUserAccess(user, item.id, permissions));
+  const effectivePermissions: RolePermissions = (() => {
+    if (permissions) return permissions;
+    if (user.customPermissionsEnabled && Array.isArray(user.customPermissions)) {
+      return {
+        ...initialPermissions,
+        [user.role]: user.customPermissions,
+      } as RolePermissions;
+    }
+    return initialPermissions;
+  })();
+
+  const accessibleNavItems = ALL_SECTIONS.filter(item => hasUserAccess(user, item.id, effectivePermissions));
   
   const hasUnreadMessages = chatSessions.some(session => session.unreadBySeller);
 

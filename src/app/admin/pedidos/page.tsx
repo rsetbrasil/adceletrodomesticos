@@ -156,7 +156,6 @@ export default function OrdersAdminPage() {
   const { settings } = useSettings();
   const { logAction, auditLogs } = useAudit();
   const { toast } = useToast();
-  const [isClient, setIsClient] = useState(false);
   const [currentIp, setCurrentIp] = useState<string | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -188,10 +187,6 @@ export default function OrdersAdminPage() {
     const parsed = Number.parseInt(ordersPerPage, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 20;
   }, [ordersPerPage]);
-
-  useEffect(() => {
-    setIsClient(true);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -592,14 +587,6 @@ export default function OrdersAdminPage() {
   const isManagerOrAdmin = user?.role === 'admin' || user?.role === 'gerente';
   const canEditInstallment = user?.role === 'admin' || user?.role === 'gerente' || user?.role === 'vendedor';
 
-
-  if (!isClient) {
-    return (
-        <div className="flex justify-center items-center py-24">
-            <p>Carregando painel...</p>
-        </div>
-    );
-  }
 
   return (
     <>

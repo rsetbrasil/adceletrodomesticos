@@ -194,64 +194,35 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
         }
     };
 
-    if ((isLoading || permissionsLoading || settingsLoading) && loadingTimedOut) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center bg-background px-4">
-                <div className="w-full max-w-md space-y-4 text-center">
-                    <p className="text-base font-medium">Não foi possível carregar o painel.</p>
-                    <p className="text-sm text-muted-foreground">
-                        A verificação de sessão ou permissões demorou além do esperado.
-                    </p>
-                    <div className="flex flex-col gap-2 sm:flex-row sm:justify-center">
-                        <Button
-                            variant="default"
-                            onClick={() => {
-                                logout();
-                                router.replace('/login');
-                            }}
-                        >
-                            Ir para o login
-                        </Button>
-                        <Button variant="outline" onClick={() => window.location.reload()}>
-                            Recarregar
-                        </Button>
-                    </div>
-                </div>
-            </div>
-        );
-    }
-
-    if (isLoading) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center bg-background">
-                <p>Verificando autenticação e permissões...</p>
-            </div>
-        );
-    }
-
-    if (!isAuthenticated || !user) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center bg-background">
-                <p>Redirecionando...</p>
-            </div>
-        );
-    }
-
-    if (permissionsLoading || settingsLoading) {
-        return (
-            <div className="flex h-screen w-full items-center justify-center bg-background">
-                <p>Carregando painel...</p>
-            </div>
-        );
-    }
-    
-    if (pathname === '/admin') {
-        return <main>{children}</main>;
-    }
-
     return (
         <>
             <div className="container mx-auto px-4 py-8 print:p-0">
+                {(isLoading || permissionsLoading || settingsLoading) && loadingTimedOut && (
+                    <div className="mb-6 rounded-md border bg-background p-4 print-hidden">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="space-y-1">
+                                <p className="text-sm font-medium">Não foi possível carregar o painel.</p>
+                                <p className="text-xs text-muted-foreground">
+                                    A verificação de sessão ou permissões demorou além do esperado.
+                                </p>
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row">
+                                <Button
+                                    variant="default"
+                                    onClick={() => {
+                                        logout();
+                                        router.replace('/login');
+                                    }}
+                                >
+                                    Ir para o login
+                                </Button>
+                                <Button variant="outline" onClick={() => window.location.reload()}>
+                                    Recarregar
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 <header className="mb-8 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b pb-6 print-hidden">
                     <div className="flex items-center gap-4">
                         <Sheet open={isNavSheetOpen} onOpenChange={setIsNavSheetOpen}>
@@ -278,28 +249,30 @@ function AdminLayoutContent({ children }: { children: ReactNode }) {
                                 <span className="hidden sm:inline">Voltar à Loja</span>
                             </Link>
                         </Button>
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                    <div className="flex flex-col items-start pr-2">
-                                        <span className="font-semibold text-sm">{user.name}</span>
-                                        <span className="text-xs text-muted-foreground capitalize -mt-1">{user.role}</span>
-                                    </div>
-                                    <ChevronDown className="h-4 w-4" />
-                                </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-56">
-                                <DropdownMenuItem onClick={() => setIsPasswordDialogOpen(true)}>
-                                    <KeyRound className="mr-2 h-4 w-4" />
-                                    <span>Alterar Senha</span>
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => logout()} className="text-destructive focus:text-destructive">
-                                    <LogOut className="mr-2 h-4 w-4" />
-                                    <span>Sair</span>
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
+                        {user && (
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="outline" size="sm">
+                                        <div className="flex flex-col items-start pr-2">
+                                            <span className="font-semibold text-sm">{user.name}</span>
+                                            <span className="text-xs text-muted-foreground capitalize -mt-1">{user.role}</span>
+                                        </div>
+                                        <ChevronDown className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="w-56">
+                                    <DropdownMenuItem onClick={() => setIsPasswordDialogOpen(true)}>
+                                        <KeyRound className="mr-2 h-4 w-4" />
+                                        <span>Alterar Senha</span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onClick={() => logout()} className="text-destructive focus:text-destructive">
+                                        <LogOut className="mr-2 h-4 w-4" />
+                                        <span>Sair</span>
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        )}
                     </div>
                 </header>
                 <div className="print-hidden hidden md:block">

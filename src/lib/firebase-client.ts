@@ -1,7 +1,7 @@
 // /src/lib/firebase-client.ts
 'use client';
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { getFirestore, Firestore } from "firebase/firestore";
+import { enableIndexedDbPersistence, getFirestore, Firestore } from "firebase/firestore";
 import { getAuth, Auth } from "firebase/auth";
 
 const firebaseConfig = {
@@ -13,9 +13,10 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-let app: FirebaseApp;
-let auth: Auth;
-let db: Firestore;
+let app: FirebaseApp | undefined;
+let auth: Auth | undefined;
+let db: Firestore | undefined;
+let persistenceInit: Promise<void> | null = null;
 
 function initClientFirebase() {
     if (typeof window === 'undefined') {
@@ -26,6 +27,10 @@ function initClientFirebase() {
         throw new Error('Firebase não está configurado. Defina NEXT_PUBLIC_FIREBASE_* em .env.local.');
     }
 
+    if (app && auth && db) {
+        return { app, auth, db };
+    }
+
     if (!getApps().length) {
         app = initializeApp(firebaseConfig);
     } else {
@@ -34,6 +39,10 @@ function initClientFirebase() {
 
     auth = getAuth(app);
     db = getFirestore(app);
+
+    if (!persistenceInit) {
+        persistenceInit = enableIndexedDbPersistence(db).then(() => undefined).catch(() => undefined);
+    }
 
     return { app, auth, db };
 }

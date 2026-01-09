@@ -6,7 +6,7 @@ import React, { createContext, useContext, ReactNode, useCallback, useState, use
 import type { Order, Product, Installment, CustomerInfo, Category, User, CommissionPayment, Payment, StockAudit, Avaria, ChatSession } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, doc, writeBatch, setDoc, updateDoc, deleteDoc, getDocs, query, orderBy, onSnapshot, deleteField } from 'firebase/firestore';
+import { collection, doc, writeBatch, setDoc, updateDoc, deleteDoc, getDocs, query, orderBy, onSnapshot, deleteField, limit } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { useData } from './DataContext';
@@ -198,6 +198,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   // Effect for fetching admin-specific data
   useEffect(() => {
+    const ORDERS_CACHE_KEY = 'admin.orders.cache.v1';
     let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
     try {
       ({ db } = getClientFirebase());
@@ -220,6 +221,23 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         return { ...order, createdAt, createdByName, createdById };
     };
 
+    let seededOrders = false;
+    try {
+      const cachedRaw = window.localStorage.getItem(ORDERS_CACHE_KEY);
+      if (cachedRaw) {
+        const parsed = JSON.parse(cachedRaw) as unknown;
+        if (Array.isArray(parsed)) {
+          const cachedOrders = parsed
+            .slice(0, 1000)
+            .map((o) => normalizeOrderAuditFields(o))
+            .filter((o) => !!o && typeof o.id === 'string' && o.id.trim().length > 0);
+          if (cachedOrders.length > 0) setOrders(cachedOrders);
+          if (cachedOrders.length > 0) seededOrders = true;
+        }
+      }
+    } catch {
+    }
+
     const setupListener = (
       collectionName: string,
       setter: React.Dispatch<React.SetStateAction<any[]>>,
@@ -233,7 +251,38 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         unsubscribes.push(unsubscribe);
     };
 
-    setupListener('orders', setOrders, 'date', (d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
+    if (!seededOrders) {
+      const recentQuery = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(200));
+      getDocs(recentQuery)
+        .then((snapshot) => {
+          const recentOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
+          if (recentOrders.length > 0) setOrders(recentOrders);
+        })
+        .catch(() => {});
+    }
+
+    {
+      const q = query(collection(db, 'orders'), orderBy('date', 'desc'));
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const nextOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
+          setOrders(nextOrders);
+          try {
+            const toCache = nextOrders.slice(0, 1000);
+            window.setTimeout(() => {
+              try {
+                window.localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(toCache));
+              } catch {
+              }
+            }, 0);
+          } catch {
+          }
+        },
+        (error) => console.error(`Error fetching orders:`, error),
+      );
+      unsubscribes.push(unsubscribe);
+    }
     setupListener('commissionPayments', setCommissionPayments, 'paymentDate');
     setupListener('stockAudits', setStockAudits);
     setupListener('avarias', setAvarias);
