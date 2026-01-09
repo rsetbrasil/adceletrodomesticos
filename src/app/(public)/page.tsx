@@ -28,7 +28,7 @@ const formatCurrency = (value: number) => {
 
 export default function Home() {
   const { products: allProducts, categories, isLoading } = useData();
-  const { headerSearch, setHeaderSearch } = useCart();
+  const { headerSearch, setHeaderSearch, catalogResetToken } = useCart();
 
   const [isPending, startTransition] = useTransition();
   const [filters, setFilters] = useState({
@@ -40,6 +40,17 @@ export default function Home() {
   const deferredSearch = useDeferredValue(filters.search);
   const INITIAL_VISIBLE_COUNT = 12;
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE_COUNT);
+
+  useEffect(() => {
+    setFilters({
+      category: 'all',
+      subcategory: 'all',
+      search: '',
+      sort: 'newest',
+    });
+    setVisibleCount(INITIAL_VISIBLE_COUNT);
+    if (typeof window !== 'undefined') window.scrollTo(0, 0);
+  }, [catalogResetToken]);
 
   useEffect(() => {
     if (headerSearch) {

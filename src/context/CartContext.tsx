@@ -44,6 +44,8 @@ interface CartContextType {
   setLastOrder: (order: Order) => void;
   headerSearch: string;
   setHeaderSearch: (search: string) => void;
+  catalogResetToken: number;
+  resetCatalog: () => void;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -55,6 +57,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [selectedCategoryForSheet, setSelectedCategoryForSheet] = useState<string | null>(null);
   const [lastOrder, setLastOrderState] = useState<Order | null>(null);
   const [headerSearch, setHeaderSearch] = useState('');
+  const [catalogResetToken, setCatalogResetToken] = useState(0);
   const { toast } = useToast();
   const { products } = useData();
 
@@ -142,6 +145,13 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       saveDataToLocalStorage('lastOrder', order);
   }
 
+  const resetCatalog = () => {
+    setHeaderSearch('');
+    setSelectedCategoryForSheet(null);
+    setIsFilterSheetOpen(false);
+    setCatalogResetToken((t) => t + 1);
+  };
+
   return (
     <CartContext.Provider
       value={{
@@ -151,6 +161,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
         selectedCategoryForSheet, setSelectedCategoryForSheet,
         lastOrder, setLastOrder,
         headerSearch, setHeaderSearch,
+        catalogResetToken, resetCatalog,
       }}
     >
       {children}

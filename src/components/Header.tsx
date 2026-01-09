@@ -15,7 +15,7 @@ import { Input } from './ui/input';
 import { usePathname, useRouter } from 'next/navigation';
 
 export default function Header() {
-  const { cartCount, headerSearch, setHeaderSearch } = useCart();
+  const { cartCount, headerSearch, setHeaderSearch, resetCatalog } = useCart();
   const { customer } = useCustomerAuth();
   const [isClient, setIsClient] = useState(false);
   const router = useRouter();
@@ -37,7 +37,13 @@ export default function Header() {
   return (
     <div className="bg-card/80 backdrop-blur-lg border-b sticky top-0 z-40">
       <div className="container mx-auto flex justify-between items-center p-4 gap-4">
-        <Link href="/">
+        <Link
+          href="/"
+          onClick={() => {
+            resetCatalog();
+            if (typeof window !== 'undefined') window.scrollTo(0, 0);
+          }}
+        >
           <Logo />
         </Link>
 
