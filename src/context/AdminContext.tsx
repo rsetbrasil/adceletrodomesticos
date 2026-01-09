@@ -13,6 +13,7 @@ import { useData } from './DataContext';
 import { addMonths, format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from './AuthContext';
+import { usePathname } from 'next/navigation';
 
 // Helper function to log actions, passed as an argument now
 type LogAction = (action: string, details: string, user: User | null) => void;
@@ -186,6 +187,17 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const { products, categories } = useData();
   const { toast } = useToast();
   const { user, users } = useAuth();
+  const pathname = usePathname();
+  const shouldLoadAllOrders =
+    pathname.startsWith('/admin/financeiro') ||
+    pathname.startsWith('/admin/clientes') ||
+    pathname.startsWith('/admin/auditoria') ||
+    pathname.startsWith('/admin/minhas-comissoes');
+  const shouldComputeCustomers =
+    pathname.startsWith('/admin/clientes') || pathname.startsWith('/admin/criar-pedido');
+  const shouldComputeFinancialSummary = pathname.startsWith('/admin/financeiro');
+  const shouldComputeCommissionSummary =
+    pathname.startsWith('/admin/financeiro') || pathname.startsWith('/admin/minhas-comissoes');
 
   // Admin data states, now managed here
   const [orders, setOrders] = useState<Order[]>([]);
@@ -195,10 +207,12 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
   const didMigrateCustomerCodesRef = useRef(false);
   const didMigrateProductCodesRef = useRef(false);
+  const preferAllOrdersRef = useRef(false);
 
   // Effect for fetching admin-specific data
   useEffect(() => {
     const ORDERS_CACHE_KEY = 'admin.orders.cache.v1';
+    const RECENT_ORDERS_LIMIT = 300;
     let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
     try {
       ({ db } = getClientFirebase());
@@ -228,7 +242,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         const parsed = JSON.parse(cachedRaw) as unknown;
         if (Array.isArray(parsed)) {
           const cachedOrders = parsed
-            .slice(0, 1000)
+            .slice(0, RECENT_ORDERS_LIMIT)
             .map((o) => normalizeOrderAuditFields(o))
             .filter((o) => !!o && typeof o.id === 'string' && o.id.trim().length > 0);
           if (cachedOrders.length > 0) setOrders(cachedOrders);
@@ -252,7 +266,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     };
 
     if (!seededOrders) {
-      const recentQuery = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(200));
+      const recentQuery = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(RECENT_ORDERS_LIMIT));
       getDocs(recentQuery)
         .then((snapshot) => {
           const recentOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
@@ -262,14 +276,15 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     }
 
     {
-      const q = query(collection(db, 'orders'), orderBy('date', 'desc'));
+      const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(RECENT_ORDERS_LIMIT));
       const unsubscribe = onSnapshot(
         q,
         (snapshot) => {
+          if (preferAllOrdersRef.current) return;
           const nextOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
           setOrders(nextOrders);
           try {
-            const toCache = nextOrders.slice(0, 1000);
+            const toCache = nextOrders.slice(0, RECENT_ORDERS_LIMIT);
             window.setTimeout(() => {
               try {
                 window.localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(toCache));
@@ -290,6 +305,48 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     
     return () => unsubscribes.forEach(unsub => unsub());
   }, []);
+
+  useEffect(() => {
+    if (!shouldLoadAllOrders) return;
+
+    let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
+    try {
+      ({ db } = getClientFirebase());
+    } catch {
+      return;
+    }
+    if (!db) return;
+
+    preferAllOrdersRef.current = true;
+
+    const normalizeOrderAuditFields = (raw: any): Order => {
+      const order = raw as Order;
+
+      const createdAt = order.createdAt || order.date || new Date().toISOString();
+      const createdByName =
+        order.createdByName ||
+        (order.source === 'catalogo' ? (order.customer?.name || 'Cliente') : undefined) ||
+        undefined;
+      const createdById = order.createdById;
+
+      return { ...order, createdAt, createdByName, createdById };
+    };
+
+    const q = query(collection(db, 'orders'), orderBy('date', 'desc'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const nextOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
+        setOrders(nextOrders);
+      },
+      (error) => console.error(`Error fetching orders:`, error),
+    );
+
+    return () => {
+      preferAllOrdersRef.current = false;
+      unsubscribe();
+    };
+  }, [shouldLoadAllOrders]);
 
   useEffect(() => {
     if (didMigrateCustomerCodesRef.current) return;
@@ -385,6 +442,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
 
   // Memos for derived data, now living in AdminContext
   const customers = useMemo(() => {
+    if (!shouldComputeCustomers) return [];
     const customerMap = new Map<string, CustomerInfo>();
     const sortedOrders = [...orders].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
@@ -396,9 +454,10 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return Array.from(customerMap.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [orders]);
+  }, [orders, shouldComputeCustomers]);
   
   const customerOrders = useMemo(() => {
+    if (!shouldComputeCustomers) return {};
     const ordersByCustomer: { [key: string]: Order[] } = {};
     orders.forEach(order => {
       if (order.status !== 'Cancelado' && order.status !== 'Excluído') {
@@ -413,9 +472,10 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         ordersByCustomer[key].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     }
     return ordersByCustomer;
-  }, [orders]);
+  }, [orders, shouldComputeCustomers]);
 
   const customerFinancials = useMemo(() => {
+      if (!shouldComputeCustomers) return {};
       const financialsByCustomer: { [key: string]: { totalComprado: number, totalPago: number, saldoDevedor: number } } = {};
       customers.forEach(customer => {
         const customerKey = getCustomerKey(customer);
@@ -427,21 +487,32 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         financialsByCustomer[customerKey] = { totalComprado, totalPago, saldoDevedor };
       });
       return financialsByCustomer;
-  }, [customers, customerOrders]);
+  }, [customers, customerOrders, shouldComputeCustomers]);
 
   const financialSummary = useMemo(() => {
+    if (!shouldComputeFinancialSummary) {
+      return {
+        totalVendido: 0,
+        totalRecebido: 0,
+        totalPendente: 0,
+        lucroBruto: 0,
+        monthlyData: [],
+      };
+    }
+
     let totalVendido = 0;
     let totalRecebido = 0;
     let totalPendente = 0;
     let lucroBruto = 0;
     const monthlySales: { [key: string]: number } = {};
+    const productById = new Map(products.map(p => [p.id, p] as const));
 
     orders.forEach(order => {
       if (order.status !== 'Cancelado' && order.status !== 'Excluído') {
         totalVendido += order.total;
 
         order.items.forEach(item => {
-            const product = products.find(p => p.id === item.id);
+            const product = productById.get(item.id);
             const cost = product?.cost || 0;
             const itemRevenue = item.price * item.quantity;
             const itemCost = cost * item.quantity;
@@ -472,9 +543,13 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const monthlyData = Object.entries(monthlySales).map(([name, total]) => ({ name, total })).reverse();
 
     return { totalVendido, totalRecebido, totalPendente, lucroBruto, monthlyData };
-  }, [orders, products]);
+  }, [orders, products, shouldComputeFinancialSummary]);
   
   const commissionSummary = useMemo(() => {
+    if (!shouldComputeCommissionSummary) {
+      return { totalPendingCommission: 0, commissionsBySeller: [] };
+    }
+
     const sellerCommissions = new Map<string, { name: string; total: number; count: number; orderIds: string[] }>();
 
     orders.forEach(order => {
@@ -497,7 +572,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const totalPendingCommission = commissionsBySeller.reduce((acc, seller) => acc + seller.total, 0);
 
     return { totalPendingCommission, commissionsBySeller };
-  }, [orders, users]);
+  }, [orders, users, shouldComputeCommissionSummary]);
   
   const restoreAdminData = useCallback(async (data: { products: Product[], orders: Order[], categories: Category[] }, logAction: LogAction, user: User | null) => {
     const { db } = getClientFirebase();

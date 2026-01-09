@@ -55,8 +55,6 @@ import { useSettings } from '@/context/SettingsContext';
 import Logo from '@/components/Logo';
 import { Textarea } from '@/components/ui/textarea';
 import { buildWhatsAppLink, cn, displayNumericCode, toBrazilE164 } from '@/lib/utils';
-import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, query, orderBy, onSnapshot } from 'firebase/firestore';
 
 
 const formatCurrency = (value: number) => {
