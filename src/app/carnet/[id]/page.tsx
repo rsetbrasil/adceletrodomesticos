@@ -116,7 +116,7 @@ const CarnetContent = ({ order, settings, pixPayload, products }: { order: Order
 
             {pixPayload && (
                 <div className="carnet-pix w-full sm:w-56 md:w-60 flex-shrink-0 print:w-40 print-default:w-36 print-a4:w-44">
-                    <PixQRCode payload={pixPayload} />
+                    <PixQRCode payload={pixPayload} pixKey={settings.pixKey} />
                 </div>
             )}
         </div>

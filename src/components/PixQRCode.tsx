@@ -6,12 +6,13 @@ import { Skeleton } from './ui/skeleton';
 
 interface PixQRCodeProps {
   payload: string;
+  pixKey?: string | null;
 }
 
 const qrCodeUrlCache = new Map<string, string>();
 const qrCodePromiseCache = new Map<string, Promise<string>>();
 
-export default function PixQRCode({ payload }: PixQRCodeProps) {
+export default function PixQRCode({ payload, pixKey }: PixQRCodeProps) {
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(() => {
     if (!payload) return null;
     return qrCodeUrlCache.get(payload) ?? null;
@@ -48,9 +49,9 @@ export default function PixQRCode({ payload }: PixQRCodeProps) {
         qrCodePromiseCache.delete(payload);
         if (!cancelled) setQrCodeUrl(url);
       })
-      .catch((err) => {
+      .catch(() => {
         qrCodePromiseCache.delete(payload);
-        console.error('Failed to generate QR Code', err);
+        if (!cancelled) setQrCodeUrl(null);
       });
 
     return () => {
@@ -58,7 +59,7 @@ export default function PixQRCode({ payload }: PixQRCodeProps) {
     };
   }, [payload]);
 
-  if (!payload) return null
+  if (!payload) return null;
 
   return (
     <div className="flex flex-col items-center gap-2 p-2 border rounded-lg bg-muted/50 print:gap-1 print:p-1 print-default:gap-1 print-default:p-1">
@@ -70,6 +71,14 @@ export default function PixQRCode({ payload }: PixQRCodeProps) {
         <img src={qrCodeUrl} alt="PIX QR Code" className="w-full h-auto rounded-md" />
       ) : (
         <Skeleton className="w-full aspect-square rounded-md" />
+      )}
+      {pixKey && (
+        <div className="w-full text-center leading-tight text-foreground print:text-[10px] print-default:text-[9px] print-a4:text-[11px]">
+          <div className="text-base font-semibold print:text-[10px] print-default:text-[9px] print-a4:text-[11px]">Chave Pix</div>
+          <div className="font-mono font-semibold text-[18px] tracking-tight break-all print:text-[10px] print-default:text-[9px] print-a4:text-[11px]">
+            {pixKey}
+          </div>
+        </div>
       )}
       <p className="text-xs text-muted-foreground text-center mt-1 print-hidden pdf-hidden">
         Abra o app do seu banco e aponte a câmera para o QR Code para pagar.

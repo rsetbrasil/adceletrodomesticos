@@ -145,10 +145,10 @@ export default function OrderConfirmationPage() {
                   <span className="font-semibold">{order.installmentDetails && order.installmentDetails.length > 0 ? format(new Date(order.installmentDetails[0].dueDate), 'dd/MM/yyyy') : '-'}</span>
                 </div>
               </div>
-               {pixPayload && (
+              {pixPayload && (
                  <div className="mt-6">
                     <p className="font-semibold mb-2 text-primary">Pague a 1ª parcela com PIX</p>
-                    <PixQRCode payload={pixPayload} />
+                    <PixQRCode payload={pixPayload} pixKey={settings.pixKey} />
                  </div>
               )}
             </div>
