@@ -10,6 +10,7 @@ interface ProductFiltersProps {
   onFilterChange: (filters: {
     category?: string;
     subcategory?: string;
+    search?: string;
   }) => void;
   categories: Category[];
   currentFilters: {
@@ -24,6 +25,7 @@ export default function ProductFilters({ onFilterChange, categories, currentFilt
   const { setIsFilterSheetOpen, setSelectedCategoryForSheet } = useCart();
 
   const handleCategoryClick = (categoryName: string) => {
+    onFilterChange({ category: categoryName, subcategory: 'all', search: '' });
     setSelectedCategoryForSheet(categoryName);
     setIsFilterSheetOpen(true);
   }
