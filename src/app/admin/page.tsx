@@ -4,7 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { usePermissions } from '@/context/PermissionsContext';
-import { ALL_SECTIONS, hasUserAccess } from '@/lib/permissions';
+import { ALL_SECTIONS, hasUserAccess, initialPermissions } from '@/lib/permissions';
 import { Button } from '@/components/ui/button';
 
 export default function AdminRootPage() {
@@ -18,9 +18,9 @@ export default function AdminRootPage() {
       router.replace('/login');
       return;
     }
-    if (!permissions) return;
+    const effectivePermissions = permissions ?? initialPermissions;
 
-    const firstAllowed = ALL_SECTIONS.find((s) => hasUserAccess(user, s.id, permissions))?.id;
+    const firstAllowed = ALL_SECTIONS.find((s) => hasUserAccess(user, s.id, effectivePermissions))?.id;
     if (firstAllowed) {
       router.replace(`/admin/${firstAllowed}`);
       return;
@@ -33,6 +33,8 @@ export default function AdminRootPage() {
     <div className="flex h-screen w-full items-center justify-center bg-background">
         {isLoading || permissionsLoading ? (
           <p>Carregando painel...</p>
+        ) : !isAuthenticated || !user ? (
+          <p>Redirecionando para o login...</p>
         ) : (
           <div className="flex flex-col items-center gap-4 text-center px-4">
             <p>Você não tem permissões para acessar o painel.</p>

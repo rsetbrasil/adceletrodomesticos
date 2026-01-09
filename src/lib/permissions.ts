@@ -72,6 +72,6 @@ export function hasUserAccess(user: User, section: AppSection, permissions: Role
     const roleAllows = hasAccess(user.role, section, permissions);
     if (!roleAllows) return false;
     if (!user.customPermissionsEnabled) return true;
-    if (!user.customPermissions) return false;
+    if (!user.customPermissions) return roleAllows;
     return user.customPermissions.includes(section);
 }

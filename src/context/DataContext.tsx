@@ -3,7 +3,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useMemo } from 'react';
-import { collection, onSnapshot, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, query, orderBy, getDocs, limit, startAfter } from 'firebase/firestore';
 import { usePathname } from 'next/navigation';
 import { getClientFirebase } from '@/lib/firebase-client';
 import type { Product, Category } from '@/lib/types';
@@ -52,6 +52,48 @@ const loadFromLocalStorage = <T,>(key: string): T | null => {
 const PRODUCTS_CACHE_KEY = 'catalogProductsLiteV2';
 const LEGACY_PRODUCTS_CACHE_KEY = 'catalogProducts';
 const CATEGORIES_CACHE_KEY = 'catalogCategories';
+
+const saveArrayCacheToLocalStorage = <T,>(key: string, payload: CatalogCache<T[]>) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const serialized = JSON.stringify(payload);
+    if (serialized.length <= MAX_LOCAL_STORAGE_CHARS) {
+      localStorage.setItem(key, serialized);
+      return;
+    }
+
+    const data = payload.data;
+    if (!Array.isArray(data) || data.length === 0) {
+      localStorage.removeItem(key);
+      return;
+    }
+
+    let low = 1;
+    let high = data.length;
+    let best = 0;
+
+    while (low <= high) {
+      const mid = Math.floor((low + high) / 2);
+      const candidate = { updatedAt: payload.updatedAt, data: data.slice(0, mid) } satisfies CatalogCache<T[]>;
+      const candidateSerialized = JSON.stringify(candidate);
+
+      if (candidateSerialized.length <= MAX_LOCAL_STORAGE_CHARS) {
+        best = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+
+    if (best > 0) {
+      localStorage.setItem(key, JSON.stringify({ updatedAt: payload.updatedAt, data: data.slice(0, best) } satisfies CatalogCache<T[]>));
+      return;
+    }
+
+    localStorage.removeItem(key);
+  } catch {
+  }
+};
 
 interface DataContextType {
   products: Product[];
@@ -155,7 +197,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       setProducts(cachedProductsData!);
       setIsLoading(false);
       if (!cachedProducts?.data?.length) {
-        saveToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: legacyCachedProducts!.updatedAt, data: toLiteCacheProducts(cachedProductsData!) } satisfies CatalogCache<CachedLiteProduct[]>);
+        saveArrayCacheToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: legacyCachedProducts!.updatedAt, data: toLiteCacheProducts(cachedProductsData!) } satisfies CatalogCache<CachedLiteProduct[]>);
       }
     }
     if (cachedCategories?.data?.length) {
@@ -187,7 +229,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           });
           setProducts(fetchedProducts);
           setIsLoading(false);
-          saveToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(fetchedProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
+          saveArrayCacheToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(fetchedProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
         }, (error) => {
             if (timeoutId !== null) window.clearTimeout(timeoutId);
             console.error("Error fetching products:", error);
@@ -211,61 +253,100 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
       let cancelled = false;
 
-      Promise.all([
-        shouldFetchProducts
-          ? getDocs(query(
+      const PUBLIC_PRODUCTS_PAGE_SIZE = 80;
+
+      const mapPublicProductDoc = (d: { id: string; data: () => Partial<Product> }) => {
+        const data = d.data() as Partial<Product>;
+        const coverImageUrl = Array.isArray(data.imageUrls) && data.imageUrls.length > 0 ? data.imageUrls[0] : undefined;
+
+        return {
+          id: d.id,
+          code: normalizeProductCode(data.code),
+          name: data.name ?? '',
+          description: data.description ?? '',
+          longDescription: '',
+          price: data.price ?? 0,
+          onSale: data.onSale,
+          promotionEndDate: toIsoDateString(data.promotionEndDate),
+          isHidden: data.isHidden,
+          category: data.category ?? '',
+          subcategory: data.subcategory,
+          stock: data.stock ?? 0,
+          imageUrls: coverImageUrl ? [coverImageUrl] : [],
+          maxInstallments: data.maxInstallments,
+          paymentCondition: data.paymentCondition,
+          commissionType: data.commissionType,
+          commissionValue: data.commissionValue,
+          "data-ai-hint": data["data-ai-hint"],
+          createdAt: toIsoDateString(data.createdAt),
+        } satisfies Product;
+      };
+
+      const fetchPublicCatalog = async () => {
+        try {
+          const categoriesPromise = shouldFetchCategories
+            ? getDocs(query(collection(db, 'categories'), orderBy('order')))
+            : Promise.resolve(null);
+
+          if (shouldFetchProducts) {
+            const firstSnapshot = await getDocs(query(
               collection(db, 'products'),
-              orderBy('createdAt', 'asc'),
-            ))
-          : Promise.resolve(null),
-        shouldFetchCategories ? getDocs(query(collection(db, 'categories'), orderBy('order'))) : Promise.resolve(null),
-      ]).then(([productsSnapshot, categoriesSnapshot]) => {
-        if (cancelled) return;
-        if (timeoutId !== null) window.clearTimeout(timeoutId);
+              orderBy('createdAt', 'desc'),
+              limit(PUBLIC_PRODUCTS_PAGE_SIZE),
+            ));
+            if (cancelled) return;
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
 
-        if (productsSnapshot) {
-          const fetchedProducts = productsSnapshot.docs.map(d => {
-            const data = d.data() as Partial<Product>;
-            const coverImageUrl = Array.isArray(data.imageUrls) && data.imageUrls.length > 0 ? data.imageUrls[0] : undefined;
+            const firstProducts = firstSnapshot.docs.map((d) => mapPublicProductDoc(d));
+            setProducts(firstProducts);
+            setIsLoading(false);
+            saveArrayCacheToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(firstProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
 
-            return {
-              id: d.id,
-              code: normalizeProductCode(data.code),
-              name: data.name ?? '',
-              description: data.description ?? '',
-              longDescription: '',
-              price: data.price ?? 0,
-              onSale: data.onSale,
-              promotionEndDate: toIsoDateString(data.promotionEndDate),
-              isHidden: data.isHidden,
-              category: data.category ?? '',
-              subcategory: data.subcategory,
-              stock: data.stock ?? 0,
-              imageUrls: coverImageUrl ? [coverImageUrl] : [],
-              maxInstallments: data.maxInstallments,
-              "data-ai-hint": data["data-ai-hint"],
-              createdAt: toIsoDateString(data.createdAt),
-            } satisfies Product;
-          });
+            if (firstSnapshot.size === PUBLIC_PRODUCTS_PAGE_SIZE) {
+              let allProducts = firstProducts;
+              let lastDoc = firstSnapshot.docs[firstSnapshot.docs.length - 1];
 
-          setProducts(fetchedProducts);
-          setIsLoading(false);
-          saveToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(fetchedProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
-        } else if (!hasCachedProducts) {
+              while (!cancelled) {
+                const nextSnapshot = await getDocs(query(
+                  collection(db, 'products'),
+                  orderBy('createdAt', 'desc'),
+                  startAfter(lastDoc),
+                  limit(PUBLIC_PRODUCTS_PAGE_SIZE),
+                ));
+                if (cancelled) return;
+                if (nextSnapshot.empty) break;
+
+                const nextProducts = nextSnapshot.docs.map((d) => mapPublicProductDoc(d));
+                allProducts = allProducts.concat(nextProducts);
+                setProducts(allProducts);
+                saveArrayCacheToLocalStorage(PRODUCTS_CACHE_KEY, { updatedAt: Date.now(), data: toLiteCacheProducts(allProducts) } satisfies CatalogCache<CachedLiteProduct[]>);
+
+                if (nextSnapshot.size < PUBLIC_PRODUCTS_PAGE_SIZE) break;
+                lastDoc = nextSnapshot.docs[nextSnapshot.docs.length - 1];
+              }
+            }
+          } else if (!hasCachedProducts) {
+            if (timeoutId !== null) window.clearTimeout(timeoutId);
+            setIsLoading(false);
+          }
+
+          const categoriesSnapshot = await categoriesPromise;
+          if (cancelled) return;
+
+          if (categoriesSnapshot) {
+            const fetchedCategories = categoriesSnapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category));
+            setCategories(fetchedCategories);
+            saveToLocalStorage(CATEGORIES_CACHE_KEY, { updatedAt: Date.now(), data: fetchedCategories } satisfies CatalogCache<Category[]>);
+          }
+        } catch (error) {
+          if (cancelled) return;
+          if (timeoutId !== null) window.clearTimeout(timeoutId);
+          console.error("Error fetching catalog:", error);
           setIsLoading(false);
         }
+      };
 
-        if (categoriesSnapshot) {
-          const fetchedCategories = categoriesSnapshot.docs.map(d => ({ ...d.data(), id: d.id } as Category));
-          setCategories(fetchedCategories);
-          saveToLocalStorage(CATEGORIES_CACHE_KEY, { updatedAt: Date.now(), data: fetchedCategories } satisfies CatalogCache<Category[]>);
-        }
-      }).catch((error) => {
-        if (cancelled) return;
-        if (timeoutId !== null) window.clearTimeout(timeoutId);
-        console.error("Error fetching catalog:", error);
-        setIsLoading(false);
-      });
+      fetchPublicCatalog();
 
       return () => {
         cancelled = true;
