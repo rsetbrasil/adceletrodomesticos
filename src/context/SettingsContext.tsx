@@ -26,6 +26,36 @@ const initialSettings: StoreSettings = {
     menuiaSendEnabled: true,
 };
 
+const SETTINGS_CACHE_KEY = 'storeSettings.cache.v1';
+
+const loadCachedSettings = (): Partial<StoreSettings> => {
+    if (typeof window === 'undefined') return {};
+    try {
+        const raw = localStorage.getItem(SETTINGS_CACHE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as Partial<StoreSettings>;
+        return {
+            logoUrl: parsed.logoUrl,
+            storeName: parsed.storeName,
+        };
+    } catch {
+        return {};
+    }
+};
+
+const saveCachedSettings = (next: Partial<StoreSettings>) => {
+    if (typeof window === 'undefined') return;
+    try {
+        const payload = JSON.stringify({
+            logoUrl: next.logoUrl,
+            storeName: next.storeName,
+        } satisfies Partial<StoreSettings>);
+        localStorage.setItem(SETTINGS_CACHE_KEY, payload);
+    } catch {
+        return;
+    }
+};
+
 interface SettingsContextType {
     settings: StoreSettings;
     updateSettings: (newSettings: Partial<StoreSettings>) => Promise<void>;
@@ -37,7 +67,10 @@ interface SettingsContextType {
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
 
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
-    const [settings, setSettings] = useState<StoreSettings>(initialSettings);
+    const [settings, setSettings] = useState<StoreSettings>(() => ({
+        ...initialSettings,
+        ...loadCachedSettings(),
+    }));
     const [isLoading, setIsLoading] = useState(true);
     const { toast } = useToast();
     const { logAction } = useAudit();
@@ -47,7 +80,6 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     useEffect(() => {
         let unsubscribe: (() => void) | null = null;
         const timeoutId = window.setTimeout(() => {
-            setSettings(initialSettings);
             setIsLoading(false);
         }, 8000);
         try {
@@ -56,10 +88,13 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
                 window.clearTimeout(timeoutId);
                 if (docSnap.exists()) {
-                    setSettings({ ...initialSettings, ...(docSnap.data() as StoreSettings) });
+                    const next = { ...initialSettings, ...(docSnap.data() as StoreSettings) };
+                    setSettings(next);
+                    saveCachedSettings(next);
                 } else {
                     await setDoc(settingsRef, initialSettings);
                     setSettings(initialSettings);
+                    saveCachedSettings(initialSettings);
                 }
                 setIsLoading(false);
             }, (error) => {
@@ -69,12 +104,10 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
                     path: 'config/storeSettings',
                     operation: 'get',
                 }));
-                setSettings(initialSettings);
                 setIsLoading(false);
             });
         } catch (error) {
             window.clearTimeout(timeoutId);
-            setSettings(initialSettings);
             setIsLoading(false);
         }
 
@@ -95,6 +128,11 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
             const entries = Object.entries(newSettings).filter(([, value]) => value !== undefined);
             const safeSettings = Object.fromEntries(entries) as Partial<StoreSettings>;
             await setDoc(settingsRef, safeSettings, { merge: true });
+            setSettings((prev) => {
+                const next = { ...prev, ...safeSettings };
+                saveCachedSettings(next);
+                return next;
+            });
 
             logAction('Atualização de Configurações', `Configurações da loja foram alteradas.`, user);
             toast({

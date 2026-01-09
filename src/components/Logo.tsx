@@ -45,13 +45,7 @@ export function StaticLogo({ logoUrl, storeName }: { logoUrl?: string; storeName
 }
 
 const Logo = () => {
-    const { settings, isLoading } = useSettings();
-
-    if (isLoading) {
-        // Return a placeholder or the default logo while loading
-        return <DefaultLogo />;
-    }
-
+    const { settings } = useSettings();
     return <StaticLogo logoUrl={settings.logoUrl} storeName={settings.storeName} />;
 };
 
