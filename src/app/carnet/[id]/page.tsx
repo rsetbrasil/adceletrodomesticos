@@ -28,9 +28,21 @@ const CarnetContent = ({ order, settings, pixPayload, products }: { order: Order
     
     const subtotal = useMemo(() => order.items.reduce((acc, item) => acc + (item.price * item.quantity), 0), [order.items]);
     const valorFinanciado = order.total;
+    const isPaidOff = useMemo(() => {
+        const installments = order.installmentDetails || [];
+        if (installments.length === 0) return false;
+        return installments.every(inst => inst.status === 'Pago');
+    }, [order.installmentDetails]);
 
     return (
-    <div className="carnet-content-wrapper bg-white break-inside-avoid print:p-0 text-sm print:text-[10px] print:leading-tight print-default:text-[9px] print-default:leading-tight print-a4:text-[11px] print-a4:leading-snug">
+    <div className="carnet-content-wrapper bg-white break-inside-avoid print:p-0 text-sm print:text-[10px] print:leading-tight print-default:text-[9px] print-default:leading-tight print-a4:text-[11px] print-a4:leading-snug relative">
+        {isPaidOff && (
+            <div className="absolute right-2 top-20 print:top-16 print-default:top-16 print-a4:top-20">
+                <div className="border-4 border-green-600 rounded-md px-4 py-1 transform -rotate-12">
+                    <p className="text-xl font-black text-green-600 tracking-wider">QUITADO</p>
+                </div>
+            </div>
+        )}
         <div className="pb-2 print:pb-1 print-default:pb-0.5 border-b">
             <div style={{ display: 'table', width: '100%' }}>
                 <div style={{ display: 'table-row' }}>
