@@ -6,7 +6,7 @@ import React, { createContext, useContext, ReactNode, useCallback, useState, use
 import type { Order, Product, Installment, CustomerInfo, Category, User, CommissionPayment, Payment, StockAudit, Avaria, ChatSession } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, doc, writeBatch, setDoc, updateDoc, deleteDoc, getDocs, query, orderBy, onSnapshot, deleteField, limit } from 'firebase/firestore';
+import { collection, doc, writeBatch, setDoc, updateDoc, deleteDoc, getDocs, query, orderBy, deleteField, limit, startAfter, documentId, type DocumentData, type Query, type QueryDocumentSnapshot, type QuerySnapshot } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { useData } from './DataContext';
@@ -14,6 +14,7 @@ import { addMonths, format, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useAuth } from './AuthContext';
 import { usePathname } from 'next/navigation';
+import { products as sampleCatalogProducts } from '@/lib/products';
 
 // Helper function to log actions, passed as an argument now
 type LogAction = (action: string, details: string, user: User | null) => void;
@@ -73,6 +74,22 @@ const normalizeProductCode = (value: unknown): string | undefined => {
   const digits = value.replace(/\D/g, '');
   return digits ? digits : undefined;
 };
+
+const toIsoDateString = (value: unknown): string => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number') return new Date(value).toISOString();
+  if (typeof value === 'object') {
+    const maybeToDate = (value as { toDate?: () => Date }).toDate;
+    if (typeof maybeToDate === 'function') return maybeToDate().toISOString();
+
+    const maybeSeconds = (value as { seconds?: number }).seconds;
+    if (typeof maybeSeconds === 'number') return new Date(maybeSeconds * 1000).toISOString();
+  }
+  return '';
+};
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> => {
   if (typeof value !== 'object' || value === null) return false;
@@ -157,6 +174,8 @@ interface AdminContextType {
   payCommissions: (sellerId: string, sellerName: string, amount: number, orderIds: string[], period: string, logAction: LogAction, user: User | null) => Promise<string | null>;
   reverseCommissionPayment: (paymentId: string, logAction: LogAction, user: User | null) => Promise<void>;
   restoreAdminData: (data: { products: Product[], orders: Order[], categories: Category[] }, logAction: LogAction, user: User | null) => Promise<void>;
+  seedSampleCatalog: (logAction: LogAction, user: User | null) => Promise<void>;
+  importCatalogData: (data: { products?: Product[]; categories?: Category[] }, logAction: LogAction, user: User | null) => Promise<void>;
   resetOrders: (logAction: LogAction, user: User | null) => Promise<void>;
   resetProducts: (logAction: LogAction, user: User | null) => Promise<void>;
   resetFinancials: (logAction: LogAction, user: User | null) => Promise<void>;
@@ -189,10 +208,11 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   const { user, users } = useAuth();
   const pathname = usePathname();
   const shouldLoadAllOrders =
-    pathname.startsWith('/admin/financeiro') ||
+    pathname.startsWith('/admin/pedidos') ||
     pathname.startsWith('/admin/clientes') ||
-    pathname.startsWith('/admin/auditoria') ||
-    pathname.startsWith('/admin/minhas-comissoes');
+    pathname.startsWith('/admin/financeiro') ||
+    pathname.startsWith('/admin/minhas-comissoes') ||
+    pathname.startsWith('/admin/criar-pedido');
   const shouldComputeCustomers =
     pathname.startsWith('/admin/clientes') || pathname.startsWith('/admin/criar-pedido');
   const shouldComputeFinancialSummary = pathname.startsWith('/admin/financeiro');
@@ -212,7 +232,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   // Effect for fetching admin-specific data
   useEffect(() => {
     const ORDERS_CACHE_KEY = 'admin.orders.cache.v1';
-    const RECENT_ORDERS_LIMIT = 300;
+    const RECENT_ORDERS_LIMIT = 1000;
     let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
     try {
       ({ db } = getClientFirebase());
@@ -220,19 +240,52 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     if (!db) return;
-    const unsubscribes: (() => void)[] = [];
 
     const normalizeOrderAuditFields = (raw: any): Order => {
         const order = raw as Order;
 
-        const createdAt = order.createdAt || order.date || new Date().toISOString();
+        const createdAt = toIsoDateString(order.createdAt) || toIsoDateString(order.date) || new Date().toISOString();
+        const date = toIsoDateString(order.date) || toIsoDateString(order.createdAt) || createdAt;
         const createdByName =
           order.createdByName ||
           (order.source === 'catalogo' ? (order.customer?.name || 'Cliente') : undefined) ||
           undefined;
         const createdById = order.createdById;
 
-        return { ...order, createdAt, createdByName, createdById };
+        return { ...order, createdAt, date, createdByName, createdById };
+    };
+
+    const getSortTime = (order: Order) => {
+      const raw = (order.date || order.createdAt || '') as string;
+      const t = Date.parse(raw);
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    const mergeRecentOrdersIntoAllOrders = (allOrders: Order[], recentOrders: Order[]) => {
+      const byId = new Map<string, Order>();
+      allOrders.forEach((o) => {
+        if (o?.id) byId.set(o.id, o);
+      });
+
+      const next: Order[] = allOrders.slice();
+
+      recentOrders.forEach((o) => {
+        const id = o?.id;
+        if (!id) return;
+
+        if (byId.has(id)) {
+          for (let i = 0; i < next.length; i++) {
+            if (next[i]?.id === id) {
+              next[i] = o;
+              break;
+            }
+          }
+        } else {
+          next.unshift(o);
+        }
+      });
+
+      return next.sort((a, b) => getSortTime(b) - getSortTime(a));
     };
 
     let seededOrders = false;
@@ -252,58 +305,57 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     } catch {
     }
 
-    const setupListener = (
+    const setupCollectionFetch = (
       collectionName: string,
       setter: React.Dispatch<React.SetStateAction<any[]>>,
       orderField = 'createdAt',
       mapper?: (doc: any) => any,
     ) => {
-        const q = query(collection(db, collectionName), orderBy(orderField, 'desc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            setter(snapshot.docs.map(d => (mapper ? mapper(d) : ({ ...d.data(), id: d.id }))));
-        }, (error) => console.error(`Error fetching ${collectionName}:`, error));
-        unsubscribes.push(unsubscribe);
-    };
-
-    if (!seededOrders) {
-      const recentQuery = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(RECENT_ORDERS_LIMIT));
-      getDocs(recentQuery)
+      const q = query(collection(db, collectionName), orderBy(orderField, 'desc'), limit(2000));
+      getDocs(q)
         .then((snapshot) => {
-          const recentOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
-          if (recentOrders.length > 0) setOrders(recentOrders);
+          setter(snapshot.docs.map((d) => (mapper ? mapper(d) : ({ ...d.data(), id: d.id }))));
         })
         .catch(() => {});
-    }
+    };
 
-    {
-      const q = query(collection(db, 'orders'), orderBy('date', 'desc'), limit(RECENT_ORDERS_LIMIT));
-      const unsubscribe = onSnapshot(
-        q,
-        (snapshot) => {
-          if (preferAllOrdersRef.current) return;
-          const nextOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
+    const recentQuery = query(collection(db, 'orders'), orderBy('createdAt', 'desc'), limit(RECENT_ORDERS_LIMIT));
+    getDocs(recentQuery)
+      .then((snapshot) => {
+        const nextOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
+        if (nextOrders.length === 0) return;
+        if ((preferAllOrdersRef.current as boolean) && (window as any).__fullOrdersLoaded__) {
+          setOrders((current) => mergeRecentOrdersIntoAllOrders(current, nextOrders));
+        } else {
           setOrders(nextOrders);
-          try {
-            const toCache = nextOrders.slice(0, RECENT_ORDERS_LIMIT);
-            window.setTimeout(() => {
-              try {
-                window.localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(toCache));
-              } catch {
-              }
-            }, 0);
-          } catch {
-          }
-        },
-        (error) => console.error(`Error fetching orders:`, error),
-      );
-      unsubscribes.push(unsubscribe);
-    }
-    setupListener('commissionPayments', setCommissionPayments, 'paymentDate');
-    setupListener('stockAudits', setStockAudits);
-    setupListener('avarias', setAvarias);
-    setupListener('chatSessions', setChatSessions, 'lastMessageAt');
+        }
+        try {
+          window.localStorage.removeItem('admin.restore.inflight.v1');
+        } catch {
+        }
+        try {
+          const toCache = nextOrders.slice(0, RECENT_ORDERS_LIMIT);
+          window.setTimeout(() => {
+            try {
+              window.localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(toCache));
+            } catch {
+            }
+          }, 0);
+        } catch {
+        }
+      })
+      .catch(() => {
+        if (!seededOrders) {
+          toast({ title: 'Conexão instável', description: 'Mostrando pedidos do cache recente.', variant: 'default' });
+        }
+      });
+
+    setupCollectionFetch('commissionPayments', setCommissionPayments, 'paymentDate');
+    setupCollectionFetch('stockAudits', setStockAudits);
+    setupCollectionFetch('avarias', setAvarias);
+    setupCollectionFetch('chatSessions', setChatSessions, 'lastMessageAt');
     
-    return () => unsubscribes.forEach(unsub => unsub());
+    return () => {};
   }, []);
 
   useEffect(() => {
@@ -318,42 +370,114 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     if (!db) return;
 
     preferAllOrdersRef.current = true;
+    (window as any).__fullOrdersLoaded__ = false;
+    let cancelled = false;
 
     const normalizeOrderAuditFields = (raw: any): Order => {
       const order = raw as Order;
 
-      const createdAt = order.createdAt || order.date || new Date().toISOString();
+      const createdAt = toIsoDateString(order.createdAt) || toIsoDateString(order.date) || new Date().toISOString();
+      const date = toIsoDateString(order.date) || toIsoDateString(order.createdAt) || createdAt;
       const createdByName =
         order.createdByName ||
         (order.source === 'catalogo' ? (order.customer?.name || 'Cliente') : undefined) ||
         undefined;
       const createdById = order.createdById;
 
-      return { ...order, createdAt, createdByName, createdById };
+      return { ...order, createdAt, date, createdByName, createdById };
     };
 
-    const q = query(collection(db, 'orders'), orderBy('date', 'desc'));
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const nextOrders = snapshot.docs.map((d) => normalizeOrderAuditFields({ ...d.data(), id: d.id }));
-        setOrders(nextOrders);
-      },
-      (error) => console.error(`Error fetching orders:`, error),
-    );
+    const getSortTime = (order: Order) => {
+      const raw = (order.date || order.createdAt || '') as string;
+      const t = Date.parse(raw);
+      return Number.isFinite(t) ? t : 0;
+    };
+
+    const loadAllOrders = async () => {
+      const PAGE_SIZE = 500;
+      let q: Query<DocumentData> = query(
+        collection(db!, 'orders'),
+        orderBy(documentId()),
+        limit(PAGE_SIZE),
+      );
+
+      let allOrders: Order[] = [];
+      let lastFlushAt = Date.now();
+
+      while (!cancelled) {
+        const snapshot: QuerySnapshot<DocumentData> = await getDocs(q);
+        if (cancelled) return;
+        if (snapshot.empty) break;
+
+        const pageOrders = snapshot.docs.map((d: QueryDocumentSnapshot<DocumentData>) =>
+          normalizeOrderAuditFields({ ...d.data(), id: d.id }),
+        );
+
+        allOrders = allOrders.concat(pageOrders);
+
+        const now = Date.now();
+        if ((now - lastFlushAt) > 250) {
+          lastFlushAt = now;
+          setOrders(allOrders.slice().sort((a, b) => getSortTime(b) - getSortTime(a)));
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        }
+
+        if (snapshot.size < PAGE_SIZE) break;
+        const lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        q = query(
+          collection(db!, 'orders'),
+          orderBy(documentId()),
+          startAfter(lastDoc.id),
+          limit(PAGE_SIZE),
+        );
+      }
+
+      if (cancelled) return;
+      (window as any).__fullOrdersLoaded__ = true;
+      setOrders(allOrders.slice().sort((a, b) => getSortTime(b) - getSortTime(a)));
+    };
+
+    loadAllOrders().catch(() => {
+      if (cancelled) return;
+      preferAllOrdersRef.current = false;
+      (window as any).__fullOrdersLoaded__ = false;
+      toast({
+        title: 'Não foi possível carregar pedidos',
+        description: 'Verifique sua conexão com o Firestore.',
+        variant: 'destructive',
+      });
+    });
 
     return () => {
       preferAllOrdersRef.current = false;
-      unsubscribe();
+      cancelled = true;
     };
   }, [shouldLoadAllOrders]);
 
   useEffect(() => {
     if (didMigrateCustomerCodesRef.current) return;
     if (!user) return;
+    if (user.role !== 'admin' && user.role !== 'gerente') return;
     if (orders.length === 0) return;
 
-    didMigrateCustomerCodesRef.current = true;
+    const migrationStateKey = 'admin.migrations.customerCodes.v1.state';
+    const migrationOffsetKey = 'admin.migrations.customerCodes.v1.offset';
+    const migrationLockKey = 'admin.migrations.customerCodes.v1.lock';
+    const migrationResumeAtKey = 'admin.migrations.customerCodes.v1.resumeAt';
+    const lockToken = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const lockTtlMs = 5 * 60 * 1000;
+    try {
+      if (window.localStorage.getItem(migrationStateKey) === 'done') return;
+    } catch {
+      return;
+    }
+    try {
+      const resumeAtRaw = window.localStorage.getItem(migrationResumeAtKey);
+      const resumeAt = resumeAtRaw ? Number(resumeAtRaw) : 0;
+      if (Number.isFinite(resumeAt) && resumeAt > Date.now()) return;
+    } catch {
+      return;
+    }
 
     const groups = new Map<string, { missingOrderIds: string[]; existingCode?: string }>();
     orders.forEach(o => {
@@ -382,27 +506,131 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       group.missingOrderIds.forEach(orderId => updates.push({ orderId, code }));
     });
 
-    const chunkSize = 450;
+    updates.sort((a, b) => a.orderId.localeCompare(b.orderId));
+
+    const getOffset = () => {
+      try {
+        const raw = window.localStorage.getItem(migrationOffsetKey);
+        const n = raw ? Number(raw) : 0;
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    const setOffset = (value: number) => {
+      try {
+        window.localStorage.setItem(migrationOffsetKey, String(value));
+      } catch {
+      }
+    };
+
+    const setState = (value: string) => {
+      try {
+        window.localStorage.setItem(migrationStateKey, value);
+      } catch {
+      }
+    };
+
+    const setResumeAt = (value: number) => {
+      try {
+        window.localStorage.setItem(migrationResumeAtKey, String(value));
+      } catch {
+      }
+    };
+
+    const acquireLock = () => {
+      try {
+        const raw = window.localStorage.getItem(migrationLockKey);
+        if (raw) {
+          const [tsRaw] = raw.split('|');
+          const ts = tsRaw ? Number(tsRaw) : 0;
+          if (Number.isFinite(ts) && (Date.now() - ts) < lockTtlMs) return false;
+        }
+        window.localStorage.setItem(migrationLockKey, `${Date.now()}|${lockToken}`);
+        return window.localStorage.getItem(migrationLockKey)?.includes(lockToken) ?? false;
+      } catch {
+        return false;
+      }
+    };
+
+    if (!acquireLock()) return;
+    didMigrateCustomerCodesRef.current = true;
+    let cancelled = false;
+
+    const clearLock = () => {
+      try {
+        const raw = window.localStorage.getItem(migrationLockKey);
+        if (raw && raw.includes(lockToken)) window.localStorage.removeItem(migrationLockKey);
+      } catch {
+      }
+    };
+
     const commitChunks = async () => {
-      for (let i = 0; i < updates.length; i += chunkSize) {
-        const chunk = updates.slice(i, i + chunkSize);
+      setState('running');
+      const offset = getOffset();
+      const maxPerRun = 50;
+      const slice = updates.slice(offset, offset + maxPerRun);
+      if (slice.length === 0) {
+        setState('done');
+        setResumeAt(0);
+        clearLock();
+        return;
+      }
+
+      const chunkSize = 50;
+      for (let i = 0; i < slice.length; i += chunkSize) {
+        if (cancelled) {
+          setState('paused');
+          setResumeAt(Date.now() + 15_000);
+          clearLock();
+          return;
+        }
+        const chunk = slice.slice(i, i + chunkSize);
         const batch = writeBatch(db);
         chunk.forEach(({ orderId, code }) => {
           batch.update(doc(db, 'orders', orderId), { 'customer.code': code });
         });
         try {
           await batch.commit();
-        } catch {
+          await sleep(600);
+        } catch (error) {
+          setState('paused');
+          try {
+            const code = (error as { code?: unknown } | null)?.code;
+            if (code === 'resource-exhausted') {
+              setResumeAt(Date.now() + 2 * 60 * 1000);
+            } else {
+              setResumeAt(Date.now() + 30_000);
+            }
+          } catch {
+          }
+          clearLock();
+          return;
         }
       }
+      const nextOffset = offset + slice.length;
+      setOffset(nextOffset);
+      if (nextOffset >= updates.length) {
+        setState('done');
+        setResumeAt(0);
+      } else {
+        setState('paused');
+        setResumeAt(Date.now() + 15_000);
+      }
+      clearLock();
     };
 
     commitChunks();
+    return () => {
+      cancelled = true;
+    };
   }, [orders, user]);
 
   useEffect(() => {
     if (didMigrateProductCodesRef.current) return;
     if (!user) return;
+    if (user.role !== 'admin' && user.role !== 'gerente') return;
     if (products.length === 0) return;
 
     const updates: Array<{ productId: string; code: string }> = [];
@@ -412,7 +640,6 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       if (p.code !== normalized) updates.push({ productId: p.id, code: normalized });
     });
 
-    didMigrateProductCodesRef.current = true;
     if (updates.length === 0) return;
 
     let db: ReturnType<typeof getClientFirebase>['db'] | null = null;
@@ -422,22 +649,145 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     if (!db) return;
-    const chunkSize = 450;
+
+    const migrationStateKey = 'admin.migrations.productCodes.v1.state';
+    const migrationOffsetKey = 'admin.migrations.productCodes.v1.offset';
+    const migrationLockKey = 'admin.migrations.productCodes.v1.lock';
+    const migrationResumeAtKey = 'admin.migrations.productCodes.v1.resumeAt';
+    const lockToken = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const lockTtlMs = 5 * 60 * 1000;
+    try {
+      if (window.localStorage.getItem(migrationStateKey) === 'done') return;
+    } catch {
+      return;
+    }
+    try {
+      const resumeAtRaw = window.localStorage.getItem(migrationResumeAtKey);
+      const resumeAt = resumeAtRaw ? Number(resumeAtRaw) : 0;
+      if (Number.isFinite(resumeAt) && resumeAt > Date.now()) return;
+    } catch {
+      return;
+    }
+
+    updates.sort((a, b) => a.productId.localeCompare(b.productId));
+
+    const getOffset = () => {
+      try {
+        const raw = window.localStorage.getItem(migrationOffsetKey);
+        const n = raw ? Number(raw) : 0;
+        return Number.isFinite(n) && n > 0 ? n : 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    const setOffset = (value: number) => {
+      try {
+        window.localStorage.setItem(migrationOffsetKey, String(value));
+      } catch {
+      }
+    };
+
+    const setState = (value: string) => {
+      try {
+        window.localStorage.setItem(migrationStateKey, value);
+      } catch {
+      }
+    };
+
+    const setResumeAt = (value: number) => {
+      try {
+        window.localStorage.setItem(migrationResumeAtKey, String(value));
+      } catch {
+      }
+    };
+
+    const acquireLock = () => {
+      try {
+        const raw = window.localStorage.getItem(migrationLockKey);
+        if (raw) {
+          const [tsRaw] = raw.split('|');
+          const ts = tsRaw ? Number(tsRaw) : 0;
+          if (Number.isFinite(ts) && (Date.now() - ts) < lockTtlMs) return false;
+        }
+        window.localStorage.setItem(migrationLockKey, `${Date.now()}|${lockToken}`);
+        return window.localStorage.getItem(migrationLockKey)?.includes(lockToken) ?? false;
+      } catch {
+        return false;
+      }
+    };
+
+    if (!acquireLock()) return;
+    didMigrateProductCodesRef.current = true;
+    let cancelled = false;
+
+    const clearLock = () => {
+      try {
+        const raw = window.localStorage.getItem(migrationLockKey);
+        if (raw && raw.includes(lockToken)) window.localStorage.removeItem(migrationLockKey);
+      } catch {
+      }
+    };
+
     const commitChunks = async () => {
-      for (let i = 0; i < updates.length; i += chunkSize) {
-        const chunk = updates.slice(i, i + chunkSize);
+      setState('running');
+      const offset = getOffset();
+      const maxPerRun = 50;
+      const slice = updates.slice(offset, offset + maxPerRun);
+      if (slice.length === 0) {
+        setState('done');
+        setResumeAt(0);
+        clearLock();
+        return;
+      }
+
+      const chunkSize = 50;
+      for (let i = 0; i < slice.length; i += chunkSize) {
+        if (cancelled) {
+          setState('paused');
+          setResumeAt(Date.now() + 15_000);
+          clearLock();
+          return;
+        }
+        const chunk = slice.slice(i, i + chunkSize);
         const batch = writeBatch(db);
         chunk.forEach(({ productId, code }) => {
           batch.update(doc(db, 'products', productId), { code });
         });
         try {
           await batch.commit();
-        } catch {
+          await sleep(600);
+        } catch (error) {
+          setState('paused');
+          try {
+            const code = (error as { code?: unknown } | null)?.code;
+            if (code === 'resource-exhausted') {
+              setResumeAt(Date.now() + 2 * 60 * 1000);
+            } else {
+              setResumeAt(Date.now() + 30_000);
+            }
+          } catch {
+          }
+          clearLock();
+          return;
         }
       }
+      const nextOffset = offset + slice.length;
+      setOffset(nextOffset);
+      if (nextOffset >= updates.length) {
+        setState('done');
+        setResumeAt(0);
+      } else {
+        setState('paused');
+        setResumeAt(Date.now() + 15_000);
+      }
+      clearLock();
     };
 
     commitChunks();
+    return () => {
+      cancelled = true;
+    };
   }, [products, user]);
 
   // Memos for derived data, now living in AdminContext
@@ -576,26 +926,417 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
   
   const restoreAdminData = useCallback(async (data: { products: Product[], orders: Order[], categories: Category[] }, logAction: LogAction, user: User | null) => {
     const { db } = getClientFirebase();
-    const batch = writeBatch(db);
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+      toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem restaurar backup.', variant: 'destructive' });
+      throw new Error('Permission denied');
+    }
 
-    products.forEach(p => batch.delete(doc(db, 'products', p.id)));
-    orders.forEach(o => batch.delete(doc(db, 'orders', o.id)));
-    categories.forEach(c => batch.delete(doc(db, 'categories', c.id)));
-    
-    await batch.commit();
+    const sanitizeDocId = (value: unknown, fallback: string) => {
+      if (typeof value !== 'string') return fallback;
+      const trimmed = value.trim();
+      if (!trimmed) return fallback;
+      const safe = trimmed.replace(/[\/\\?#\[\]]/g, '-');
+      return safe || fallback;
+    };
 
-    const addBatch = writeBatch(db);
-    data.products.forEach(p => addBatch.set(doc(db, 'products', p.id), p));
-    data.orders.forEach(o => addBatch.set(doc(db, 'orders', o.id), o));
-    data.categories.forEach(c => addBatch.set(doc(db, 'categories', c.id), c));
+    const normalizeString = (value: unknown, fallback = '') => (typeof value === 'string' ? value : fallback);
+    const normalizeOrderAuditFields = (raw: any): Order => {
+      const order = raw as Order;
 
-    addBatch.commit().then(() => {
-        logAction('Restauração de Backup', 'Todos os dados de produtos, pedidos e categorias foram restaurados.', user);
-        toast({ title: 'Dados restaurados com sucesso!' });
-    }).catch(async (error) => {
+      const createdAt = toIsoDateString(order.createdAt) || toIsoDateString(order.date) || new Date().toISOString();
+      const date = toIsoDateString(order.date) || toIsoDateString(order.createdAt) || createdAt;
+      const createdByName =
+        order.createdByName ||
+        (order.source === 'catalogo' ? (order.customer?.name || 'Cliente') : undefined) ||
+        undefined;
+      const createdById = order.createdById;
+
+      return { ...order, createdAt, date, createdByName, createdById };
+    };
+
+    const normalizeProductIds = (productsToNormalize: Product[]) => {
+      const idMap = new Map<string, string>();
+      const normalized = productsToNormalize.map((p, index) => {
+        const rawId = normalizeString((p as any)?.id, `prod-backup-${Date.now()}-${index}`);
+        const safeId = sanitizeDocId(rawId, `prod-backup-${Date.now()}-${index}`);
+        if (rawId !== safeId) idMap.set(rawId, safeId);
+        return { ...p, id: safeId } as Product;
+      });
+      return { normalized, idMap };
+    };
+
+    const normalizeCategoryIds = (categoriesToNormalize: Category[]) => {
+      const idMap = new Map<string, string>();
+      const normalized = categoriesToNormalize.map((c, index) => {
+        const rawId = normalizeString((c as any)?.id, `cat-backup-${Date.now()}-${index}`);
+        const safeId = sanitizeDocId(rawId, `cat-backup-${Date.now()}-${index}`);
+        if (rawId !== safeId) idMap.set(rawId, safeId);
+        return { ...c, id: safeId } as Category;
+      });
+      return { normalized, idMap };
+    };
+
+    const normalizeOrderIdsAndItems = (ordersToNormalize: Order[], productIdMap: Map<string, string>) => {
+      const idMap = new Map<string, string>();
+      const normalized = ordersToNormalize.map((o, index) => {
+        const rawId = normalizeString((o as any)?.id, `order-backup-${Date.now()}-${index}`);
+        const safeId = sanitizeDocId(rawId, `order-backup-${Date.now()}-${index}`);
+        if (rawId !== safeId) idMap.set(rawId, safeId);
+
+        const rawItems = Array.isArray((o as any)?.items) ? (o as any).items : [];
+        const items = rawItems.map((item: any) => {
+          const rawProductId = normalizeString(item?.id, '');
+          const nextProductId = productIdMap.get(rawProductId) ?? rawProductId;
+          return { ...item, id: nextProductId };
+        });
+
+        return { ...o, id: safeId, items } as Order;
+      });
+      return { normalized, idMap };
+    };
+
+    const commitWithRetry = async (batch: ReturnType<typeof writeBatch>, op: 'delete' | 'write') => {
+      let delayMs = 600;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        try {
+          await batch.commit();
+          return;
+        } catch (error) {
+          const code = (error as { code?: unknown } | null)?.code;
+          const shouldRetry = code === 'resource-exhausted' || code === 'unavailable' || code === 'deadline-exceeded';
+          if (!shouldRetry || attempt === 5) {
+            throw error instanceof Error ? error : new Error(`Firestore ${op} failed`);
+          }
+          await sleep(delayMs);
+          delayMs = Math.min(10_000, Math.floor(delayMs * 1.7));
+        }
+      }
+    };
+
+    const deleteAllDocs = async (collectionName: string) => {
+      let last: QueryDocumentSnapshot<DocumentData> | null = null;
+      while (true) {
+        const q: Query<DocumentData> = last
+          ? query(collection(db, collectionName), orderBy(documentId()), startAfter(last), limit(450))
+          : query(collection(db, collectionName), orderBy(documentId()), limit(450));
+        const snap: QuerySnapshot<DocumentData> = await getDocs(q);
+        if (snap.empty) break;
+
+        const batch = writeBatch(db);
+        snap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
+        await commitWithRetry(batch, 'delete');
+        last = snap.docs[snap.docs.length - 1];
+      }
+    };
+
+    try {
+      const incomingProducts = Array.isArray(data.products) ? data.products : [];
+      const incomingOrders = Array.isArray(data.orders) ? data.orders : [];
+      const incomingCategories = Array.isArray(data.categories) ? data.categories : [];
+
+      const { normalized: categoriesNormalized } = normalizeCategoryIds(incomingCategories);
+      const { normalized: productsNormalized, idMap: productIdMap } = normalizeProductIds(incomingProducts);
+      const { normalized: ordersNormalizedRaw } = normalizeOrderIdsAndItems(incomingOrders, productIdMap);
+      const ordersNormalized = ordersNormalizedRaw.map((o) => normalizeOrderAuditFields(o));
+
+      await deleteAllDocs('products');
+      await deleteAllDocs('orders');
+      await deleteAllDocs('categories');
+
+      let batch = writeBatch(db);
+      let ops = 0;
+
+      const commitIfNeeded = async (force = false) => {
+        if (!force && ops < 450) return;
+        if (ops === 0) return;
+        await commitWithRetry(batch, 'write');
+        batch = writeBatch(db);
+        ops = 0;
+      };
+
+      for (const p of productsNormalized) {
+        batch.set(doc(db, 'products', p.id), removeUndefinedDeep(p));
+        ops++;
+        await commitIfNeeded(false);
+      }
+      for (const o of ordersNormalized) {
+        batch.set(doc(db, 'orders', o.id), removeUndefinedDeep(o));
+        ops++;
+        await commitIfNeeded(false);
+      }
+      for (const c of categoriesNormalized) {
+        batch.set(doc(db, 'categories', c.id), removeUndefinedDeep(c));
+        ops++;
+        await commitIfNeeded(false);
+      }
+
+      await commitIfNeeded(true);
+
+      const getSortTime = (order: Order) => {
+        const raw = (order.date || order.createdAt || '') as string;
+        const t = Date.parse(raw);
+        return Number.isFinite(t) ? t : 0;
+      };
+      const nextOrders = ordersNormalized.slice().sort((a, b) => getSortTime(b) - getSortTime(a));
+      setOrders(nextOrders);
+      (window as any).__fullOrdersLoaded__ = true;
+      try {
+        const ORDERS_CACHE_KEY = 'admin.orders.cache.v1';
+        const RECENT_ORDERS_LIMIT = 1000;
+        window.localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify(nextOrders.slice(0, RECENT_ORDERS_LIMIT)));
+      } catch {
+      }
+
+      logAction(
+        'Restauração de Backup',
+        `Backup restaurado: ${productsNormalized.length} produtos, ${ordersNormalized.length} pedidos, ${categoriesNormalized.length} categorias.`,
+        user,
+      );
+      const warnings = productIdMap.size > 0 ? ` (${productIdMap.size} IDs de produtos ajustados)` : '';
+      toast({ title: 'Dados restaurados com sucesso!', description: `Produtos: ${productsNormalized.length}, Pedidos: ${ordersNormalized.length}, Categorias: ${categoriesNormalized.length}${warnings}` });
+    } catch (error) {
+      const code = (error as { code?: unknown } | null)?.code;
+      const message = error instanceof Error ? error.message : 'Falha ao restaurar backup';
+      if (code === 'permission-denied') {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'multiple', operation: 'write' }));
+      }
+      toast({ title: 'Erro ao restaurar backup', description: message, variant: 'destructive' });
+      throw error instanceof Error ? error : new Error(message);
+    }
+  }, [toast, setOrders]);
+
+  const seedSampleCatalog = useCallback(async (logAction: LogAction, user: User | null) => {
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+      toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem criar o catálogo.', variant: 'destructive' });
+      return;
+    }
+
+    const { db } = getClientFirebase();
+    const [existingProductsSnap, existingCategoriesSnap] = await Promise.all([
+      getDocs(query(collection(db, 'products'), limit(1))),
+      getDocs(query(collection(db, 'categories'), limit(1))),
+    ]);
+
+    if (!existingProductsSnap.empty || !existingCategoriesSnap.empty) {
+      toast({
+        title: 'Catálogo já existe',
+        description: 'Para usar o catálogo de exemplo, o Firestore precisa estar vazio.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const toIdPart = (value: string) =>
+      value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '');
+
+    const categoriesByName = new Map<string, Set<string>>();
+    sampleCatalogProducts.forEach((product) => {
+      const categoryName = product.category?.trim() || 'Sem categoria';
+      const sub = product.subcategory?.trim();
+      if (!categoriesByName.has(categoryName)) categoriesByName.set(categoryName, new Set());
+      if (sub) categoriesByName.get(categoryName)!.add(sub);
     });
-  }, [products, orders, categories, toast]);
+
+    const sortedCategoryNames = Array.from(categoriesByName.keys()).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    const categoriesToWrite: Category[] = sortedCategoryNames.map((name, index) => {
+      const id = `cat-sample-${toIdPart(name) || String(index)}`;
+      const subs = Array.from(categoriesByName.get(name) || []).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      return { id, name, order: index, subcategories: subs } satisfies Category;
+    });
+
+    const productsToWrite: Product[] = sampleCatalogProducts.map((p) => {
+      const id = `prod-sample-${String(p.id).replace(/[^a-zA-Z0-9_-]/g, '') || String(Date.now())}`;
+      const createdAt = typeof p.createdAt === 'string' && p.createdAt ? p.createdAt : new Date().toISOString();
+      return {
+        ...p,
+        id,
+        category: p.category?.trim() || 'Sem categoria',
+        subcategory: p.subcategory?.trim() || undefined,
+        imageUrls: Array.isArray(p.imageUrls) ? p.imageUrls : [],
+        createdAt,
+      } satisfies Product;
+    });
+
+    let batch = writeBatch(db);
+    let ops = 0;
+
+    const commitIfNeeded = async (force = false) => {
+      if (!force && ops < 450) return;
+      if (ops === 0) return;
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    };
+
+    for (const c of categoriesToWrite) {
+      batch.set(doc(db, 'categories', c.id), c);
+      ops++;
+      await commitIfNeeded(false);
+    }
+
+    for (const p of productsToWrite) {
+      batch.set(doc(db, 'products', p.id), p);
+      ops++;
+      await commitIfNeeded(false);
+    }
+
+    await commitIfNeeded(true);
+
+    logAction(
+      'Seed do Catálogo',
+      `Catálogo de exemplo criado com ${productsToWrite.length} produtos e ${categoriesToWrite.length} categorias.`,
+      user,
+    );
+    toast({ title: 'Catálogo criado!', description: 'Produtos e categorias foram inseridos no Firestore.' });
+  }, [toast]);
+
+  const importCatalogData = useCallback(async (data: { products?: Product[]; categories?: Category[] }, logAction: LogAction, user: User | null) => {
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+      toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem importar o catálogo.', variant: 'destructive' });
+      return;
+    }
+
+    const incomingProducts = Array.isArray(data.products) ? data.products : [];
+    const incomingCategories = Array.isArray(data.categories) ? data.categories : [];
+
+    if (incomingProducts.length === 0 && incomingCategories.length === 0) {
+      toast({ title: 'Arquivo inválido', description: 'Nenhum produto ou categoria encontrado.', variant: 'destructive' });
+      return;
+    }
+
+    const { db } = getClientFirebase();
+
+    const normalizeId = (value: unknown, fallback: string) => {
+      if (typeof value !== 'string') return fallback;
+      const trimmed = value.trim();
+      if (!trimmed) return fallback;
+      const safe = trimmed.replace(/[\/\\?#\[\]]/g, '-');
+      return safe || fallback;
+    };
+
+    const normalizeNumber = (value: unknown, fallback: number) => {
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string') {
+        const parsed = Number(value.replace(',', '.'));
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      return fallback;
+    };
+
+    const normalizeString = (value: unknown, fallback = '') => {
+      if (typeof value !== 'string') return fallback;
+      return value;
+    };
+
+    const normalizeStringArray = (value: unknown) => {
+      if (!Array.isArray(value)) return [];
+      return value.filter((v) => typeof v === 'string').map((v) => v);
+    };
+
+    const normalizedCategories: Category[] = incomingCategories.map((raw, index) => {
+      const base = raw as Partial<Category>;
+      const name = normalizeString(base.name, '').trim();
+      const subcategories = normalizeStringArray(base.subcategories).map((s) => s.trim()).filter(Boolean);
+      const id = normalizeId(base.id, `cat-import-${Date.now()}-${index}`);
+      const order = typeof base.order === 'number' && Number.isFinite(base.order) ? base.order : index;
+      return {
+        id,
+        name: name || `Categoria ${index + 1}`,
+        order,
+        subcategories,
+      } satisfies Category;
+    });
+
+    const normalizedProducts: Product[] = incomingProducts.map((raw, index) => {
+      const base = raw as Partial<Product>;
+      const id = normalizeId(base.id, `prod-import-${Date.now()}-${index}`);
+      const category = normalizeString(base.category, '').trim() || 'Sem categoria';
+      const subcategory = normalizeString(base.subcategory, '').trim() || undefined;
+
+      return {
+        id,
+        code: typeof base.code === 'string' ? base.code : undefined,
+        name: normalizeString(base.name, '').trim() || `Produto ${index + 1}`,
+        description: normalizeString(base.description, ''),
+        longDescription: normalizeString(base.longDescription, ''),
+        price: normalizeNumber(base.price, 0),
+        cost: typeof base.cost === 'number' && Number.isFinite(base.cost) ? base.cost : undefined,
+        onSale: typeof base.onSale === 'boolean' ? base.onSale : undefined,
+        promotionEndDate: typeof base.promotionEndDate === 'string' ? base.promotionEndDate : undefined,
+        isHidden: typeof base.isHidden === 'boolean' ? base.isHidden : undefined,
+        category,
+        subcategory,
+        stock: Math.max(0, Math.floor(normalizeNumber(base.stock, 0))),
+        imageUrls: normalizeStringArray(base.imageUrls),
+        maxInstallments: typeof base.maxInstallments === 'number' && Number.isFinite(base.maxInstallments) ? base.maxInstallments : undefined,
+        paymentCondition: typeof base.paymentCondition === 'string' ? base.paymentCondition : undefined,
+        commissionType: base.commissionType === 'fixed' || base.commissionType === 'percentage' ? base.commissionType : undefined,
+        commissionValue: typeof base.commissionValue === 'number' && Number.isFinite(base.commissionValue) ? base.commissionValue : undefined,
+        "data-ai-hint": typeof (base as any)["data-ai-hint"] === 'string' ? (base as any)["data-ai-hint"] : undefined,
+        createdAt: typeof base.createdAt === 'string' && base.createdAt ? base.createdAt : new Date().toISOString(),
+      } satisfies Product;
+    });
+
+    const deleteAllDocs = async (collectionName: string) => {
+      let last: QueryDocumentSnapshot<DocumentData> | null = null;
+      while (true) {
+        const q: Query<DocumentData> = last
+          ? query(collection(db, collectionName), orderBy(documentId()), startAfter(last), limit(450))
+          : query(collection(db, collectionName), orderBy(documentId()), limit(450));
+        const snap: QuerySnapshot<DocumentData> = await getDocs(q);
+        if (snap.empty) break;
+
+        const batch = writeBatch(db);
+        snap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
+        await batch.commit();
+        last = snap.docs[snap.docs.length - 1];
+      }
+    };
+
+    if (incomingProducts.length > 0) {
+      await deleteAllDocs('products');
+    }
+    if (incomingCategories.length > 0) {
+      await deleteAllDocs('categories');
+    }
+
+    let batch = writeBatch(db);
+    let ops = 0;
+
+    const commitIfNeeded = async (force = false) => {
+      if (!force && ops < 450) return;
+      if (ops === 0) return;
+      await batch.commit();
+      batch = writeBatch(db);
+      ops = 0;
+    };
+
+    for (const c of normalizedCategories) {
+      batch.set(doc(db, 'categories', c.id), c);
+      ops++;
+      await commitIfNeeded(false);
+    }
+
+    for (const p of normalizedProducts) {
+      batch.set(doc(db, 'products', p.id), p);
+      ops++;
+      await commitIfNeeded(false);
+    }
+
+    await commitIfNeeded(true);
+
+    logAction(
+      'Importação de Catálogo',
+      `Catálogo importado: ${normalizedProducts.length} produtos, ${normalizedCategories.length} categorias.`,
+      user,
+    );
+    toast({ title: 'Importação concluída!', description: 'Produtos e categorias foram importados.' });
+  }, [toast]);
 
   const resetOrders = useCallback(async (logAction: LogAction, user: User | null) => {
     const { db } = getClientFirebase();
@@ -609,7 +1350,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     
     batch.commit().then(() => {
         logAction('Reset de Pedidos', 'Todos os pedidos de compra foram zerados.', user);
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'orders', operation: 'delete' }));
     });
   }, [orders]);
@@ -621,7 +1362,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     
     batch.commit().then(() => {
         logAction('Reset de Produtos', 'Todos os produtos foram zerados.', user);
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'products', operation: 'delete' }));
     });
   }, [products]);
@@ -633,7 +1374,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     
     batch.commit().then(() => {
         logAction('Reset Financeiro', 'Todos os pagamentos de comissão foram zerados.', user);
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'commissionPayments', operation: 'delete' }));
     });
   }, [commissionPayments]);
@@ -675,7 +1416,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
             title: "Produto Cadastrado!",
             description: `O produto "${newProduct.name}" foi adicionado ao catálogo.`,
         });
-      }).catch(async (error) => {
+      }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: productRef.path,
             operation: 'create',
@@ -702,7 +1443,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     
     setDoc(productRef, productToUpdate, { merge: true }).then(() => {
         logAction('Atualização de Produto', `Produto "${updatedProduct.name}" (ID: ${updatedProduct.id}) foi atualizado.`, user);
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: productRef.path,
             operation: 'update',
@@ -726,7 +1467,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
             variant: 'destructive',
             duration: 5000,
         });
-      }).catch(async (error) => {
+      }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: productRef.path,
             operation: 'delete',
@@ -753,7 +1494,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     setDoc(categoryRef, newCategory).then(() => {
         logAction('Criação de Categoria', `Categoria "${categoryName}" foi criada.`, user);
         toast({ title: "Categoria Adicionada!" });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: categoryRef.path,
             operation: 'create',
@@ -786,7 +1527,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.commit().then(() => {
         logAction('Atualização de Categoria', `Categoria "${oldName}" foi renomeada para "${newName}".`, user);
         toast({ title: "Categoria Renomeada!" });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: `categories/${categoryId}`,
             operation: 'update',
@@ -810,7 +1551,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     deleteDoc(categoryRef).then(() => {
         logAction('Exclusão de Categoria', `Categoria "${categoryToDelete.name}" foi excluída.`, user);
         toast({ title: "Categoria Excluída!", variant: "destructive", duration: 5000 });
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: categoryRef.path,
             operation: 'delete',
@@ -831,7 +1572,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(categoryRef, { subcategories: newSubcategories }).then(() => {
         logAction('Criação de Subcategoria', `Subcategoria "${subcategoryName}" foi adicionada à categoria "${category.name}".`, user);
         toast({ title: "Subcategoria Adicionada!" });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: categoryRef.path,
             operation: 'update',
@@ -861,7 +1602,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.commit().then(() => {
         logAction('Atualização de Subcategoria', `Subcategoria "${oldSub}" foi renomeada para "${newSub}" na categoria "${category.name}".`, user);
         toast({ title: "Subcategoria Renomeada!" });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: `categories/${categoryId}`,
             operation: 'update',
@@ -887,7 +1628,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(categoryRef, { subcategories: newSubcategories }).then(() => {
         logAction('Exclusão de Subcategoria', `Subcategoria "${subcategoryName}" foi excluída da categoria "${category.name}".`, user);
         toast({ title: "Subcategoria Excluída!", variant: "destructive", duration: 5000 });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: categoryRef.path,
             operation: 'update',
@@ -918,7 +1659,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.update(doc(db, 'categories', category2.id), { order: order1 });
     await batch.commit().then(() => {
         logAction('Reordenação de Categoria', `Categoria "${category1.name}" foi movida ${direction === 'up' ? 'para cima' : 'para baixo'}.`, user);
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: 'categories',
             operation: 'update',
@@ -943,7 +1684,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const categoryRef = doc(db, 'categories', categoryId);
     updateDoc(categoryRef, { subcategories: subs }).then(() => {
         logAction('Reordenação de Subcategoria', `Subcategorias da categoria "${category.name}" foram reordenadas.`, user);
-    }).catch(async (e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: categoryRef.path,
             operation: 'update',
@@ -978,7 +1719,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.commit().then(() => {
         logAction('Movimentação de Subcategoria', `Subcategoria "${subName}" foi movida de "${sourceCategory.name}" para "${targetCategory.name}".`, user);
         toast({ title: 'Subcategoria Movida!', description: `"${subName}" agora faz parte de "${targetCategory.name}".`});
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: 'categories',
             operation: 'update',
@@ -1022,7 +1763,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [products, toast]);
 
-  const addOrder = async (order: Partial<Order> & { firstDueDate: Date }, logAction: LogAction, user: User | null): Promise<Order | null> => {
+  const addOrder = useCallback(async (order: Partial<Order> & { firstDueDate: Date }, logAction: LogAction, user: User | null): Promise<Order | null> => {
     const { db } = getClientFirebase();
     if (!user && order.source !== 'catalogo') {
       throw new Error('Usuário não logado.');
@@ -1255,7 +1996,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         await manageStockForOrder(order as Order, 'add');
         throw e;
     }
-  };
+  }, [manageStockForOrder, products, users]);
 
   const updateOrderStatus = useCallback(async (orderId: string, newStatus: Order['status'], logAction: LogAction, user: User | null) => {
     const { db } = getClientFirebase();
@@ -1297,7 +2038,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
           logAction('Exclusão de Pedido', `Pedido #${orderId} movido para a lixeira.`, user);
           toast({ title: "Pedido movido para a Lixeira", description: `O pedido #${orderId} foi movido para a lixeira.` });
         }
-    }).catch(async (e) => {
+    }).catch(async () => {
         if (wasCanceledOrDeleted && !isNowCanceledOrDeleted) {
             await manageStockForOrder(orderToUpdate, 'add');
         }
@@ -1323,7 +2064,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     const orderRef = doc(db, 'orders', orderId);
     deleteDoc(orderRef).then(() => {
         logAction('Exclusão Permanente de Pedido', `Pedido #${orderId} foi excluído permanentemente.`, user);
-    }).catch(async (e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: orderRef.path,
             operation: 'delete',
@@ -1364,7 +2105,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(orderRef, { installmentDetails: updatedInstallments }).then(() => {
         logAction('Registro de Pagamento de Parcela', `Registrado pagamento de ${paymentWithUser.amount} (${paymentWithUser.method}) na parcela ${installmentNumber} do pedido #${orderId}.`, user);
         toast({ title: 'Pagamento Registrado!' });
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: orderRef.path,
             operation: 'update',
@@ -1398,7 +2139,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(orderRef, { installmentDetails: updatedInstallments }).then(() => {
         logAction('Estorno de Pagamento', `Estornado pagamento de ${reversedPaymentAmount} da parcela ${installmentNumber} do pedido #${orderId}.`, user);
         toast({ title: 'Pagamento Estornado!', description: 'O valor foi retornado ao saldo devedor da parcela.' });
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: orderRef.path,
             operation: 'update',
@@ -1422,7 +2163,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(orderRef, { installmentDetails: updatedInstallments }).then(() => {
         logAction('Atualização de Vencimento', `Vencimento da parcela ${installmentNumber} do pedido #${orderId} alterado de ${oldDueDate ? new Date(oldDueDate).toLocaleDateString() : 'N/A'} para ${newDueDate.toLocaleDateString()}.`, user);
         toast({ title: "Vencimento Atualizado!" });
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: orderRef.path,
             operation: 'update',
@@ -1455,7 +2196,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
         updateDoc(orderRef, dataToUpdate).then(() => {
             logAction('Atualização de Valor de Parcela', `Valor da parcela ${installmentNumber} do pedido #${orderId} alterado para ${newAmount.toFixed(2)}. Total do pedido e desconto recalculados.`, user);
             toast({ title: 'Valor da Parcela Atualizado!' });
-        }).catch(async (e) => {
+        }).catch(async () => {
             errorEmitter.emit('permission-error', new FirestorePermissionError({
                 path: orderRef.path,
                 operation: 'update',
@@ -1504,7 +2245,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.commit().then(() => {
         logAction('Atualização de Cliente', `Dados do cliente ${updatedCustomerData.name} (CPF: ${updatedCustomerData.cpf}) foram atualizados.`, user);
         toast({ title: "Cliente Atualizado!", description: `Os dados de ${updatedCustomerData.name} foram salvos.` });
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: `orders`,
             operation: 'update',
@@ -1549,7 +2290,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.commit().then(() => {
         logAction('Cliente movido para lixeira', `Cliente ${customer.name} (CPF: ${customer.cpf}) e todos os seus ${ordersToTrash.length} pedidos foram movidos para a lixeira.`, user);
         toast({ title: "Cliente movido para a lixeira!", description: `O cliente ${customer.name} foi movido para a lixeira.`, variant: "destructive" });
-    }).catch(async(e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: 'orders',
             operation: 'update',
@@ -1812,7 +2553,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(orderRef, detailsToUpdate).then(() => {
       logAction('Atualização de Detalhes do Pedido', `Detalhes do pedido #${orderId} foram atualizados.`, user);
       toast({ title: "Pedido Atualizado!", description: `Os detalhes do pedido #${orderId} foram atualizados.` });
-    }).catch(async (e) => {
+    }).catch(async () => {
       errorEmitter.emit('permission-error', new FirestorePermissionError({
           path: orderRef.path,
           operation: 'update',
@@ -1875,7 +2616,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     batch.commit().then(() => {
         logAction('Estorno de Comissão', `O pagamento de comissão ID ${paymentId} foi estornado.`, user);
         toast({ title: "Pagamento Estornado!", description: "As comissões dos pedidos voltaram a ficar pendentes." });
-    }).catch(async (e) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: `commissionPayments/${paymentId}`,
             operation: 'delete',
@@ -1889,7 +2630,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     setDoc(auditRef, audit).then(() => {
         logAction('Auditoria de Estoque', `Auditoria de estoque para ${audit.month}/${audit.year} foi salva.`, user);
         toast({ title: "Auditoria Salva!", description: "O relatório de auditoria foi salvo com sucesso." });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: auditRef.path,
             operation: 'create',
@@ -1917,7 +2658,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
             title: "Avaria Registrada!",
             description: "O registro de avaria foi salvo com sucesso.",
         });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: avariaRef.path,
             operation: 'create',
@@ -1938,7 +2679,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(avariaRef, dataToUpdate).then(() => {
         logAction('Atualização de Avaria', `Avaria ID ${avariaId} foi atualizada.`, user);
         toast({ title: "Avaria Atualizada!", description: "O registro de avaria foi atualizado." });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: avariaRef.path,
             operation: 'update',
@@ -1953,7 +2694,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     deleteDoc(avariaRef).then(() => {
         logAction('Exclusão de Avaria', `Avaria ID ${avariaId} foi excluída.`, user);
         toast({ title: "Avaria Excluída!", variant: "destructive", duration: 5000 });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: avariaRef.path,
             operation: 'delete',
@@ -2022,7 +2763,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     updateDoc(sessionRef, data).then(() => {
         logAction('Atualização de Chat', `Sessão de chat ${sessionId} foi atualizada.`, user);
         toast({ title: 'Nome do visitante atualizado!' });
-    }).catch(async (error) => {
+    }).catch(async () => {
         errorEmitter.emit('permission-error', new FirestorePermissionError({
             path: sessionRef.path,
             operation: 'update',
@@ -2037,7 +2778,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     addProduct, updateProduct, deleteProduct,
     addCategory, deleteCategory, updateCategoryName, addSubcategory, updateSubcategory, deleteSubcategory, moveCategory, reorderSubcategories, moveSubcategory,
     payCommissions, reverseCommissionPayment,
-    restoreAdminData, resetOrders, resetProducts, resetFinancials, resetAllAdminData,
+    restoreAdminData, seedSampleCatalog, importCatalogData, resetOrders, resetProducts, resetFinancials, resetAllAdminData,
     saveStockAudit, addAvaria, updateAvaria, deleteAvaria,
     emptyTrash, deleteChatSession, updateChatSession,
     // Admin Data states
@@ -2057,7 +2798,7 @@ export const AdminProvider = ({ children }: { children: ReactNode }) => {
     addProduct, updateProduct, deleteProduct,
     addCategory, deleteCategory, updateCategoryName, addSubcategory, updateSubcategory, deleteSubcategory, moveCategory, reorderSubcategories, moveSubcategory,
     payCommissions, reverseCommissionPayment,
-    restoreAdminData, resetOrders, resetProducts, resetFinancials, resetAllAdminData,
+    restoreAdminData, seedSampleCatalog, importCatalogData, resetOrders, resetProducts, resetFinancials, resetAllAdminData,
     saveStockAudit, addAvaria, updateAvaria, deleteAvaria,
     emptyTrash, deleteChatSession, updateChatSession,
     orders, commissionPayments, stockAudits, avarias, chatSessions, customers, customerOrders, customerFinancials, financialSummary, commissionSummary

@@ -4,7 +4,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import type { AuditLog, User, UserRole } from '@/lib/types';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, doc, getDocs, setDoc, query, orderBy, onSnapshot } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, query, orderBy } from 'firebase/firestore';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 
@@ -30,24 +30,27 @@ export const AuditProvider = ({ children }: { children: ReactNode }) => {
       const logsCollection = collection(db, 'auditLogs');
       const q = query(logsCollection, orderBy('timestamp', 'desc'));
 
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
+      getDocs(q)
+        .then((querySnapshot) => {
           window.clearTimeout(timeoutId);
-          const fetchedLogs = querySnapshot.docs.map(d => ({ ...d.data(), id: d.id })) as AuditLog[];
+          const fetchedLogs = querySnapshot.docs.map((d) => ({ ...d.data(), id: d.id })) as AuditLog[];
           setAuditLogs(fetchedLogs);
           setIsLoading(false);
-      }, (error) => {
+        })
+        .catch(() => {
           window.clearTimeout(timeoutId);
-          console.error("Error fetching audit logs from Firestore:", error);
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
+          errorEmitter.emit(
+            'permission-error',
+            new FirestorePermissionError({
               path: 'auditLogs',
               operation: 'list',
-          }));
+            }),
+          );
           setIsLoading(false);
-      });
+        });
 
       return () => {
         window.clearTimeout(timeoutId);
-        unsubscribe();
       };
     } catch (error) {
       window.clearTimeout(timeoutId);

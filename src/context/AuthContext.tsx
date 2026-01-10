@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import type { User, UserRole } from '@/lib/types';
 import { initialUsers } from '@/lib/users';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, query, where, getDoc, onSnapshot, deleteDoc } from 'firebase/firestore';
+import { collection, doc, getDocs, setDoc, updateDoc, writeBatch, query, where, getDoc, deleteDoc, documentId, orderBy, startAfter, limit, type DocumentData, type Query, type QueryDocumentSnapshot, type QuerySnapshot } from 'firebase/firestore';
 import { useAudit } from './AuditContext';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -127,7 +127,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }, [user]);
 
   useEffect(() => {
-    let usersUnsubscribe: (() => void) | null = null;
     const cachedUsers = readCachedUsers();
     if (cachedUsers?.length) {
       setUsers(cachedUsers);
@@ -139,28 +138,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, 8000);
     try {
       const { db } = getClientFirebase();
-      usersUnsubscribe = onSnapshot(
-        collection(db, 'users'),
-        (snapshot) => {
+      getDocs(collection(db, 'users'))
+        .then((snapshot) => {
           window.clearTimeout(usersTimeoutId);
           const nextUsers = snapshot.docs.map((d) => ({ ...d.data(), id: d.id } as User));
           setUsers(nextUsers);
           writeCachedUsers(nextUsers);
           setUsersLoaded(true);
           setCanValidateSession(true);
-        },
-        (error) => {
+        })
+        .catch(() => {
           window.clearTimeout(usersTimeoutId);
-          console.error("Error fetching users:", error);
-          errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: 'users',
-            operation: 'list',
-          }));
+          errorEmitter.emit(
+            'permission-error',
+            new FirestorePermissionError({
+              path: 'users',
+              operation: 'list',
+            }),
+          );
           setUsers(initialUsers);
           setUsersLoaded(true);
           setCanValidateSession(false);
-        }
-      );
+        });
     } catch (error) {
       window.clearTimeout(usersTimeoutId);
       setUsers(initialUsers);
@@ -170,7 +169,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     
     return () => {
       window.clearTimeout(usersTimeoutId);
-      usersUnsubscribe?.();
     };
   }, []);
 
@@ -479,26 +477,75 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         toast({ title: "Erro", description: "Firebase não está configurado.", variant: "destructive" });
         return;
     }
-    const batch = writeBatch(db);
-    
-    users.forEach(existingUser => {
-        batch.delete(doc(db, 'users', existingUser.id));
-    });
+    const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
-    usersToRestore.forEach(u => {
-        const docRef = doc(db, 'users', u.id);
-        batch.set(docRef, u);
-    });
+    const commitWithRetry = async (batch: ReturnType<typeof writeBatch>, op: 'delete' | 'write') => {
+      let delayMs = 600;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        try {
+          await batch.commit();
+          await sleep(250);
+          return;
+        } catch (error) {
+          const code = (error as { code?: unknown } | null)?.code;
+          const shouldRetry = code === 'resource-exhausted' || code === 'unavailable' || code === 'deadline-exceeded';
+          if (!shouldRetry || attempt === 5) {
+            throw error instanceof Error ? error : new Error(`Firestore ${op} failed`);
+          }
+          await sleep(delayMs);
+          delayMs = Math.min(10_000, Math.floor(delayMs * 1.7));
+        }
+      }
+    };
 
-    batch.commit().then(() => {
-        logAction('Restauração de Usuários', 'Todos os usuários foram restaurados a partir de um backup.', user);
-        toast({ title: "Usuários Restaurados!", description: "A lista de usuários foi substituída com sucesso." });
-    }).catch(async (error) => {
-        errorEmitter.emit('permission-error', new FirestorePermissionError({
-            path: 'users',
-            operation: 'write'
-        }));
-    });
+    const deleteAllDocs = async (collectionName: string) => {
+      let last: QueryDocumentSnapshot<DocumentData> | null = null;
+      while (true) {
+        const q: Query<DocumentData> = last
+          ? query(collection(db, collectionName), orderBy(documentId()), startAfter(last), limit(450))
+          : query(collection(db, collectionName), orderBy(documentId()), limit(450));
+        const snap: QuerySnapshot<DocumentData> = await getDocs(q);
+        if (snap.empty) break;
+
+        const batch = writeBatch(db);
+        snap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
+        await commitWithRetry(batch, 'delete');
+        last = snap.docs[snap.docs.length - 1] ?? null;
+      }
+    };
+
+    try {
+      await deleteAllDocs('users');
+
+      let batch = writeBatch(db);
+      let ops = 0;
+
+      const commitIfNeeded = async (force = false) => {
+        if (!force && ops < 400) return;
+        if (ops === 0) return;
+        await commitWithRetry(batch, 'write');
+        batch = writeBatch(db);
+        ops = 0;
+      };
+
+      for (let i = 0; i < usersToRestore.length; i += 1) {
+        const u = usersToRestore[i];
+        const id = typeof u?.id === 'string' && u.id.trim() ? u.id.trim() : `restored-user-${Date.now()}-${i}`;
+        batch.set(doc(db, 'users', id), { ...u, id });
+        ops += 1;
+        await commitIfNeeded(false);
+      }
+
+      await commitIfNeeded(true);
+
+      setUsers(usersToRestore);
+      writeCachedUsers(usersToRestore);
+
+      logAction('Restauração de Usuários', 'Todos os usuários foram restaurados a partir de um backup.', user);
+      toast({ title: "Usuários Restaurados!", description: "A lista de usuários foi substituída com sucesso." });
+    } catch {
+      errorEmitter.emit('permission-error', new FirestorePermissionError({ path: 'users', operation: 'write' }));
+    }
   };
 
   return (

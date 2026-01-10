@@ -5,7 +5,7 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useCa
 import type { RolePermissions } from '@/lib/types';
 import { initialPermissions } from '@/lib/permissions';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from './AuthContext';
 import { useAudit } from './AuditContext';
@@ -31,7 +31,6 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
     const { logAction } = useAudit();
     
     useEffect(() => {
-        let unsubscribe: (() => void) | null = null;
         try {
             const cached = localStorage.getItem(PERMISSIONS_CACHE_STORAGE_KEY);
             if (cached) {
@@ -51,7 +50,7 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
         try {
             const { db } = getClientFirebase();
             const permissionsRef = doc(db, 'config', 'rolePermissions');
-            unsubscribe = onSnapshot(permissionsRef, async (docSnap) => {
+            getDoc(permissionsRef).then(async (docSnap) => {
                 window.clearTimeout(timeoutId);
                 if (docSnap.exists()) {
                     const nextPermissions = docSnap.data() as RolePermissions;
@@ -66,9 +65,8 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
                     setPermissions(initialPermissions);
                 }
                 setIsLoading(false);
-            }, (error) => {
+            }).catch((error) => {
                 window.clearTimeout(timeoutId);
-                console.error("Failed to load permissions from Firestore:", error);
                 errorEmitter.emit('permission-error', new FirestorePermissionError({
                     path: 'config/rolePermissions',
                     operation: 'get',
@@ -84,9 +82,8 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
 
         return () => {
             window.clearTimeout(timeoutId);
-            unsubscribe?.();
         };
-    }, [toast]);
+    }, []);
 
     const updatePermissions = useCallback(async (newPermissions: RolePermissions) => {
         try {
@@ -97,7 +94,11 @@ export const PermissionsProvider = ({ children }: { children: ReactNode }) => {
             }
             const permissionsRef = doc(db, 'config', 'rolePermissions');
             await setDoc(permissionsRef, newPermissions);
-            // Real-time listener will update the state
+            setPermissions(newPermissions);
+            try {
+                localStorage.setItem(PERMISSIONS_CACHE_STORAGE_KEY, JSON.stringify(newPermissions));
+            } catch {
+            }
             logAction('Atualização de Permissões', 'As permissões de acesso dos perfis foram alteradas.', user);
             toast({
                 title: "Permissões Salvas!",

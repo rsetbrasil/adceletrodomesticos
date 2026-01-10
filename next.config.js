@@ -2,7 +2,7 @@
 const path = require('path');
 
 const nextConfig = {
-  reactStrictMode: true,
+  reactStrictMode: false,
   outputFileTracingRoot: path.join(__dirname),
   images: {
     remotePatterns: [

@@ -1,17 +1,19 @@
 // /src/lib/firebase-client.ts
 'use client';
 import { initializeApp, getApps, getApp, FirebaseApp } from "firebase/app";
-import { enableIndexedDbPersistence, getFirestore, Firestore } from "firebase/firestore";
+import { enableIndexedDbPersistence, initializeFirestore, Firestore, setLogLevel } from "firebase/firestore";
 import { getAuth, Auth } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyAb8vn7iQ43VwqIHBOHDVA0jnZE-LpFbXU",
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || "adc-eletro.firebaseapp.com",
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || "adc-eletro",
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || "adc-eletro.firebasestorage.app",
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || "387148226922",
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || "1:387148226922:web:6426088ebda884f8820513",
 };
+
+const CLIENT_APP_NAME = 'adc-client';
 
 let app: FirebaseApp | undefined;
 let auth: Auth | undefined;
@@ -23,22 +25,18 @@ function initClientFirebase() {
         throw new Error('getClientFirebase must be called on the client.');
     }
 
-    if (!firebaseConfig.apiKey || !firebaseConfig.authDomain || !firebaseConfig.projectId || !firebaseConfig.appId) {
-        throw new Error('Firebase não está configurado. Defina NEXT_PUBLIC_FIREBASE_* em .env.local.');
-    }
-
     if (app && auth && db) {
         return { app, auth, db };
     }
 
-    if (!getApps().length) {
-        app = initializeApp(firebaseConfig);
-    } else {
-        app = getApp();
-    }
+    const hasNamedApp = getApps().some((existing) => existing.name === CLIENT_APP_NAME);
+    app = hasNamedApp ? getApp(CLIENT_APP_NAME) : initializeApp(firebaseConfig, CLIENT_APP_NAME);
 
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = initializeFirestore(app, {
+        experimentalForceLongPolling: true,
+    });
+    setLogLevel('error');
 
     if (!persistenceInit) {
         persistenceInit = enableIndexedDbPersistence(db).then(() => undefined).catch(() => undefined);

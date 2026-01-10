@@ -8,11 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { User, Shield } from 'lucide-react';
 import Link from 'next/link';
-import { useData } from '@/context/DataContext';
 
 export default function CustomerLoginPage() {
   const { login, isLoading: authIsLoading } = useCustomerAuth();
-  const { isLoading: dataIsLoading } = useData();
   const [cpf, setCpf] = useState('');
   const [password, setPassword] = useState('');
 
@@ -22,7 +20,7 @@ export default function CustomerLoginPage() {
     login(normalizedCpf, password);
   };
   
-  const isLoading = authIsLoading || dataIsLoading;
+  const isLoading = authIsLoading;
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-muted/30">

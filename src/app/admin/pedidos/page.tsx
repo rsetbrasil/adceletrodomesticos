@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { PackageSearch, FileText, CheckCircle, Pencil, User as UserIcon, ShoppingBag, CreditCard, Printer, Undo2, Save, CalendarIcon, MoreHorizontal, Trash2, Users, Filter, X, Trash, History, Percent, UserPlus, Clock, MessageSquare, Eye, Calculator } from 'lucide-react';
+import { PackageSearch, FileText, CheckCircle, Pencil, User as UserIcon, ShoppingBag, CreditCard, Printer, Undo2, Save, CalendarIcon, MoreHorizontal, Trash2, Users, Filter, X, Trash, History, Percent, UserPlus, Clock, MessageSquare, Eye, Calculator, FileDown } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { format, parseISO, addMonths, getMonth, getYear, getDate } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -208,6 +208,128 @@ export default function OrdersAdminPage() {
   const sellers = useMemo(() => {
     return users.filter(u => u.role === 'vendedor' || u.role === 'admin' || u.role === 'gerente');
   }, [users]);
+
+  const handleExportCsv = (csv: string, filename: string) => {
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    link.download = `export-${filename}-${date}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast({ title: 'Exportação Concluída!', description: `O arquivo ${filename} foi baixado.` });
+  };
+
+  const handleExportOrderCsv = (order: Order) => {
+    const delimiter = ';';
+    const escapeCsv = (value: unknown) => {
+      const raw = value == null ? '' : String(value);
+      const escaped = raw.replace(/"/g, '""');
+      const mustQuote = escaped.includes('"') || escaped.includes('\n') || escaped.includes('\r') || escaped.includes(delimiter);
+      return mustQuote ? `"${escaped}"` : escaped;
+    };
+
+    const creatorName = getOrderCreatorName(order, users);
+    const installmentsJson = JSON.stringify(order.installmentDetails || []);
+    const attachmentsJson = JSON.stringify(order.attachments || []);
+
+    const headers = [
+      'orderId',
+      'orderDate',
+      'status',
+      'paymentMethod',
+      'total',
+      'discount',
+      'downPayment',
+      'installments',
+      'installmentValue',
+      'commission',
+      'commissionPaid',
+      'sellerId',
+      'sellerName',
+      'createdByName',
+      'createdFromIp',
+      'source',
+      'customerName',
+      'customerCpf',
+      'customerCode',
+      'customerPhone',
+      'customerPhone2',
+      'customerPhone3',
+      'customerEmail',
+      'customerZip',
+      'customerAddress',
+      'customerNumber',
+      'customerComplement',
+      'customerNeighborhood',
+      'customerCity',
+      'customerState',
+      'observations',
+      'installmentDetailsJson',
+      'attachmentsJson',
+      'itemId',
+      'itemName',
+      'itemPrice',
+      'itemQuantity',
+    ];
+
+    const baseRow = {
+      orderId: displayNumericCode(order.id),
+      orderDate: order.date,
+      status: order.status,
+      paymentMethod: order.paymentMethod,
+      total: order.total,
+      discount: order.discount ?? '',
+      downPayment: order.downPayment ?? '',
+      installments: order.installments,
+      installmentValue: order.installmentValue,
+      commission: order.commission ?? '',
+      commissionPaid: order.commissionPaid ?? '',
+      sellerId: order.sellerId ?? '',
+      sellerName: order.sellerName ?? '',
+      createdByName: creatorName,
+      createdFromIp: order.createdFromIp ?? '',
+      source: order.source ?? '',
+      customerName: order.customer.name ?? '',
+      customerCpf: order.customer.cpf ?? '',
+      customerCode: order.customer.code ?? '',
+      customerPhone: order.customer.phone ?? '',
+      customerPhone2: order.customer.phone2 ?? '',
+      customerPhone3: order.customer.phone3 ?? '',
+      customerEmail: order.customer.email ?? '',
+      customerZip: order.customer.zip ?? '',
+      customerAddress: order.customer.address ?? '',
+      customerNumber: order.customer.number ?? '',
+      customerComplement: order.customer.complement ?? '',
+      customerNeighborhood: order.customer.neighborhood ?? '',
+      customerCity: order.customer.city ?? '',
+      customerState: order.customer.state ?? '',
+      observations: order.observations ?? '',
+      installmentDetailsJson: installmentsJson,
+      attachmentsJson,
+    };
+
+    const rows: string[] = [];
+    rows.push(headers.join(delimiter));
+
+    const items = Array.isArray(order.items) && order.items.length > 0 ? order.items : [{ id: '', name: '', price: 0, quantity: 0, imageUrl: '' }];
+    for (const item of items) {
+      const rowObj: Record<string, unknown> = {
+        ...baseRow,
+        itemId: item.id ?? '',
+        itemName: item.name ?? '',
+        itemPrice: item.price ?? '',
+        itemQuantity: item.quantity ?? '',
+      };
+      rows.push(headers.map((h) => escapeCsv(rowObj[h])).join(delimiter));
+    }
+
+    const safeId = String(order.id || 'pedido').trim().replace(/[^\w.-]+/g, '-');
+    handleExportCsv(rows.join('\n'), `pedido-${safeId}`);
+  };
   
   const filteredOrders = useMemo(() => {
     if (!orders) return [];
@@ -1454,6 +1576,10 @@ export default function OrdersAdminPage() {
                       )}
                   </div>
                     <DialogFooter className="pt-4 border-t">
+                      <Button variant="outline" onClick={() => selectedOrder && handleExportOrderCsv(selectedOrder)} disabled={!selectedOrder}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Exportar Pedido em CSV
+                      </Button>
                       {selectedOrder.paymentMethod === 'Crediário' && (
                         <Button variant="secondary" asChild>
                             <Link href={`/carnet/${selectedOrder.id}`} target="_blank" rel="noopener noreferrer">

@@ -40,6 +40,7 @@ export default function AtendimentoPage() {
     const [db, setDb] = useState<Firestore | null>(null);
     const { toast } = useToast();
     const prevSessionsRef = useRef<ChatSession[]>([]);
+    const lastListenErrorAtRef = useRef<number>(0);
 
     const [isEditingName, setIsEditingName] = useState(false);
     const [editingNameValue, setEditingNameValue] = useState('');
@@ -128,6 +129,11 @@ export default function AtendimentoPage() {
                 fetchedMessages.push({ sessionId: selectedSession.id, ...doc.data() } as ChatMessage);
             });
             setMessages(fetchedMessages);
+        }, () => {
+            const now = Date.now();
+            if (now - lastListenErrorAtRef.current < 10000) return;
+            lastListenErrorAtRef.current = now;
+            toast({ title: "Erro de conexão", description: "Não foi possível carregar mensagens.", variant: "destructive" });
         });
 
         return () => unsubscribe();

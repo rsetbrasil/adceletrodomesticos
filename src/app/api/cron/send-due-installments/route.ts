@@ -167,6 +167,9 @@ async function sendMenuiaText(to: string, message: string) {
 async function handleCron(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
+    if (process.env.NODE_ENV === 'development') {
+      return NextResponse.json({ disabled: true, error: 'CRON_SECRET não configurado.' }, { status: 200 });
+    }
     return NextResponse.json({ error: 'CRON_SECRET não configurado.' }, { status: 500 });
   }
 
@@ -288,7 +291,7 @@ async function handleCron(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  return handleCron(request);
+  return NextResponse.json({ error: 'Método não permitido.' }, { status: 405 });
 }
 
 export async function POST(request: NextRequest) {

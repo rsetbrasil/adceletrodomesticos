@@ -5,7 +5,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { doc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { useAudit } from './AuditContext';
 import { useAuth } from './AuthContext';
 import { errorEmitter } from '@/firebase/error-emitter';
@@ -75,8 +75,6 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
 
     useEffect(() => {
-        let unsubscribe: (() => void) | null = null;
-
         const cached = loadCachedSettings();
         if (cached.logoUrl || cached.storeName) {
             setSettings((prev) => ({ ...prev, ...cached }));
@@ -88,7 +86,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
         try {
             const { db } = getClientFirebase();
             const settingsRef = doc(db, 'config', 'storeSettings');
-            unsubscribe = onSnapshot(settingsRef, async (docSnap) => {
+            getDoc(settingsRef).then(async (docSnap) => {
                 window.clearTimeout(timeoutId);
                 if (docSnap.exists()) {
                     const next = { ...initialSettings, ...(docSnap.data() as StoreSettings) };
@@ -100,9 +98,8 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
                     saveCachedSettings(initialSettings);
                 }
                 setIsLoading(false);
-            }, (error) => {
+            }).catch((error) => {
                 window.clearTimeout(timeoutId);
-                console.error("Failed to load settings from Firestore:", error);
                 errorEmitter.emit('permission-error', new FirestorePermissionError({
                     path: 'config/storeSettings',
                     operation: 'get',
@@ -116,9 +113,8 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 
         return () => {
             window.clearTimeout(timeoutId);
-            unsubscribe?.();
         };
-    }, [toast]);
+    }, []);
 
     const updateSettings = async (newSettings: Partial<StoreSettings>) => {
         try {

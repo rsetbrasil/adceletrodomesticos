@@ -14,7 +14,7 @@ import { useAdmin, useAdminData } from '@/context/AdminContext';
 import { useAuth } from '@/context/AuthContext';
 import { useEffect, useState, useRef } from 'react';
 import { Settings, Save, FileDown, Upload, AlertTriangle, RotateCcw, Trash2, Lock, History, User, Calendar, Shield, Image as ImageIcon, Clock, Package, DollarSign, Users, ShoppingCart } from 'lucide-react';
-import type { RolePermissions, UserRole, AppSection, StoreSettings, CustomerInfo } from '@/lib/types';
+import type { RolePermissions, UserRole, AppSection, StoreSettings, CustomerInfo, Order } from '@/lib/types';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { useAudit } from '@/context/AuditContext';
@@ -30,7 +30,9 @@ import { ptBR } from 'date-fns/locale';
 import Image from 'next/image';
 import { Switch } from '@/components/ui/switch';
 import { useData } from '@/context/DataContext';
-import { buildWhatsAppLink, toBrazilE164 } from '@/lib/utils';
+import { buildWhatsAppLink, displayNumericCode, toBrazilE164 } from '@/lib/utils';
+import { getClientFirebase } from '@/lib/firebase-client';
+import { collection, doc, documentId, getDoc, getDocs, limit, orderBy, query, setDoc, startAfter, waitForPendingWrites, writeBatch, type DocumentData, type Query, type QueryDocumentSnapshot, type QuerySnapshot } from 'firebase/firestore';
 
 const settingsSchema = z.object({
   storeName: z.string().trim().min(1, 'O nome da loja é obrigatório.').max(1000),
@@ -135,7 +137,7 @@ function AuditLogCard() {
 
 export default function ConfiguracaoPage() {
   const { settings, updateSettings, isLoading: settingsLoading, restoreSettings, resetSettings } = useSettings();
-  const { restoreAdminData, resetOrders, resetProducts, resetFinancials, resetAllAdminData } = useAdmin();
+  const { restoreAdminData, seedSampleCatalog, importCatalogData, resetOrders, resetProducts, resetFinancials, resetAllAdminData } = useAdmin();
   const { products, categories } = useData();
   const { orders, customers } = useAdminData();
   const { user, users, restoreUsers, initialUsers } = useAuth();
@@ -143,9 +145,62 @@ export default function ConfiguracaoPage() {
   const { toast } = useToast();
   const { logAction } = useAudit();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const catalogFileInputRef = useRef<HTMLInputElement>(null);
   
   const [dialogOpenFor, setDialogOpenFor] = useState<'resetOrders' | 'resetProducts' | 'resetFinancials' | 'resetAll' | null>(null);
   const [localPermissions, setLocalPermissions] = useState<RolePermissions | null>(null);
+  const [isFirestoreBackupExporting, setIsFirestoreBackupExporting] = useState(false);
+  const [isFirestoreBackupCsvExporting, setIsFirestoreBackupCsvExporting] = useState(false);
+  const [isBackupExporting, setIsBackupExporting] = useState(false);
+  const [isOrdersCsvExporting, setIsOrdersCsvExporting] = useState(false);
+
+  const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
+  const isPlainObject = (value: unknown): value is Record<string, unknown> => {
+    if (typeof value !== 'object' || value === null) return false;
+    const proto = Object.getPrototypeOf(value);
+    return proto === Object.prototype || proto === null;
+  };
+
+  const removeUndefinedDeep = <T,>(value: T): T => {
+    if (value instanceof Date) return value;
+    if (Array.isArray(value)) return value.map((item) => removeUndefinedDeep(item)) as unknown as T;
+    if (isPlainObject(value)) {
+      const entries = Object.entries(value)
+        .filter(([, v]) => v !== undefined)
+        .map(([k, v]) => [k, removeUndefinedDeep(v)]);
+      return Object.fromEntries(entries) as T;
+    }
+    return value;
+  };
+
+  const deserializeFirestoreValue = (value: any): any => {
+    if (value == null) return value;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+    if (Array.isArray(value)) return value.map((v) => deserializeFirestoreValue(v));
+
+    if (typeof value === 'object') {
+      const typeTag = (value as any).__type;
+      if (typeTag === 'timestamp' || typeTag === 'date') {
+        const raw = (value as any).value;
+        return typeof raw === 'string' ? raw : raw;
+      }
+      if (typeTag === 'geopoint') {
+        return { latitude: (value as any).latitude, longitude: (value as any).longitude };
+      }
+      if (typeTag === 'reference') {
+        return { path: (value as any).path };
+      }
+
+      const out: Record<string, any> = {};
+      for (const [k, v] of Object.entries(value)) {
+        out[k] = deserializeFirestoreValue(v);
+      }
+      return out;
+    }
+
+    return value;
+  };
 
   const form = useForm<z.infer<typeof settingsSchema>>({
     resolver: zodResolver(settingsSchema),
@@ -193,8 +248,9 @@ export default function ConfiguracaoPage() {
     }
   };
 
-  const handleExport = (data: any, filename: string) => {
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const handleExport = (data: any, filename: string, options?: { pretty?: boolean }) => {
+    const json = options?.pretty === false ? JSON.stringify(data) : JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -207,17 +263,414 @@ export default function ConfiguracaoPage() {
     toast({ title: 'Exportação Concluída!', description: `O arquivo ${filename} foi baixado.` });
   };
 
-  const handleExportFullBackup = () => {
-    const backupData = {
-      settings,
-      products,
-      orders,
-      categories,
-      users,
-      permissions,
+  const handleExportCsv = (csv: string, filename: string) => {
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const date = new Date().toISOString().slice(0, 10);
+    link.download = `export-${filename}-${date}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast({ title: 'Exportação Concluída!', description: `O arquivo ${filename} foi baixado.` });
+  };
+
+  const fetchAllRawFromCollection = async (collectionName: string) => {
+    const { db } = getClientFirebase();
+    let last: QueryDocumentSnapshot<DocumentData> | null = null;
+    const all: any[] = [];
+
+    while (true) {
+      let q: Query<DocumentData>;
+      if (last) {
+        q = query(collection(db, collectionName), orderBy(documentId()), startAfter(last), limit(450));
+      } else {
+        q = query(collection(db, collectionName), orderBy(documentId()), limit(450));
+      }
+      const snap: QuerySnapshot<DocumentData> = await getDocs(q);
+      if (snap.empty) break;
+      snap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => {
+        all.push({ id: d.id, ...d.data() });
+      });
+      last = snap.docs[snap.docs.length - 1] ?? null;
+    }
+    return all;
+  };
+
+  const handleExportFullBackup = async () => {
+    if (isBackupExporting) return;
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+      toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem exportar backup completo.', variant: 'destructive' });
+      return;
+    }
+
+    setIsBackupExporting(true);
+    toast({ title: 'Gerando backup completo...', description: 'Carregando dados do Firestore.' });
+
+    try {
+      const [allOrders, allProducts, allCategories, allUsers] = await Promise.all([
+        fetchAllRawFromCollection('orders'),
+        fetchAllRawFromCollection('products'),
+        fetchAllRawFromCollection('categories'),
+        fetchAllRawFromCollection('users'),
+      ]);
+      const backupData = {
+        settings,
+        products: allProducts,
+        orders: allOrders,
+        categories: allCategories,
+        users: allUsers,
+        permissions,
+      };
+
+      handleExport(backupData, 'backup-completo');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao exportar backup completo.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      setIsBackupExporting(false);
+    }
+  };
+
+  const serializeFirestoreValue = (value: any): any => {
+    if (value == null) return value;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+    if (value instanceof Date) return { __type: 'date', value: value.toISOString() };
+    if (Array.isArray(value)) return value.map((v) => serializeFirestoreValue(v));
+
+    if (typeof value === 'object') {
+      const maybeToDate = (value as { toDate?: () => Date }).toDate;
+      if (typeof maybeToDate === 'function') return { __type: 'timestamp', value: maybeToDate().toISOString() };
+
+      const seconds = (value as { seconds?: number }).seconds;
+      if (typeof seconds === 'number') return { __type: 'timestamp', value: new Date(seconds * 1000).toISOString() };
+
+      const geo = value as { latitude?: unknown; longitude?: unknown };
+      if (typeof geo.latitude === 'number' && typeof geo.longitude === 'number') {
+        return { __type: 'geopoint', latitude: geo.latitude, longitude: geo.longitude };
+      }
+
+      const ref = value as { path?: unknown };
+      if (typeof ref.path === 'string' && ref.path.includes('/')) {
+        return { __type: 'reference', path: ref.path };
+      }
+
+      const out: Record<string, any> = {};
+      for (const [k, v] of Object.entries(value)) {
+        out[k] = serializeFirestoreValue(v);
+      }
+      return out;
+    }
+
+    return value;
+  };
+
+  const fetchAllFromCollection = async (collectionName: string) => {
+    const { db } = getClientFirebase();
+    let last: QueryDocumentSnapshot<DocumentData> | null = null;
+    const all: any[] = [];
+
+    while (true) {
+      let q: Query<DocumentData>;
+      if (last) {
+        q = query(collection(db, collectionName), orderBy(documentId()), startAfter(last), limit(450));
+      } else {
+        q = query(collection(db, collectionName), orderBy(documentId()), limit(450));
+      }
+      const snap: QuerySnapshot<DocumentData> = await getDocs(q);
+      if (snap.empty) break;
+      snap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => {
+        all.push({ id: d.id, ...serializeFirestoreValue(d.data()) });
+      });
+      last = snap.docs[snap.docs.length - 1] ?? null;
+    }
+    return all;
+  };
+
+  const handleExportFirestoreFullBackup = async () => {
+    if (isFirestoreBackupExporting) return;
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+      toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem exportar backup completo.', variant: 'destructive' });
+      return;
+    }
+
+    setIsFirestoreBackupExporting(true);
+    toast({ title: 'Gerando backup completo...', description: 'Isso pode demorar alguns minutos.' });
+
+    try {
+      const { db } = getClientFirebase();
+
+      const settingsSnap = await getDoc(doc(db, 'config', 'storeSettings'));
+      const permissionsSnap = await getDoc(doc(db, 'config', 'rolePermissions'));
+
+      const collectionNames = [
+        'orders',
+        'products',
+        'categories',
+        'users',
+        'commissionPayments',
+        'stockAudits',
+        'avarias',
+        'chatSessions',
+        'auditLogs',
+      ];
+
+      const collections: Record<string, any[]> = {};
+      let totalDocs = 0;
+      for (const name of collectionNames) {
+        const items = await fetchAllFromCollection(name);
+        collections[name] = items;
+        totalDocs += items.length;
+      }
+
+      const exportedAt = new Date().toISOString();
+      const payload = {
+        version: 1,
+        exportedAt,
+        config: {
+          storeSettings: settingsSnap.exists() ? serializeFirestoreValue(settingsSnap.data()) : null,
+          rolePermissions: permissionsSnap.exists() ? serializeFirestoreValue(permissionsSnap.data()) : null,
+        },
+        collections,
+      };
+
+      handleExport(payload, 'backup-completo-firestore', { pretty: false });
+      toast({ title: 'Backup exportado!', description: `Backup completo do Firestore baixado (${totalDocs} registros).` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao exportar backup completo.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      setIsFirestoreBackupExporting(false);
+    }
+  };
+
+  const handleExportFirestoreFullBackupCsv = async () => {
+    if (isFirestoreBackupCsvExporting) return;
+    if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+      toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem exportar backup completo.', variant: 'destructive' });
+      return;
+    }
+
+    setIsFirestoreBackupCsvExporting(true);
+    toast({ title: 'Gerando backup completo em CSV...', description: 'Isso pode demorar alguns minutos.' });
+
+    const delimiter = ';';
+    const escapeCsv = (value: unknown) => {
+      const raw = value == null ? '' : String(value);
+      const escaped = raw.replace(/"/g, '""');
+      const mustQuote = escaped.includes('"') || escaped.includes('\n') || escaped.includes('\r') || escaped.includes(delimiter);
+      return mustQuote ? `"${escaped}"` : escaped;
     };
 
-    handleExport(backupData, 'backup-completo');
+    try {
+      const { db } = getClientFirebase();
+
+      const settingsSnap = await getDoc(doc(db, 'config', 'storeSettings'));
+      const permissionsSnap = await getDoc(doc(db, 'config', 'rolePermissions'));
+
+      const collectionNames = [
+        'orders',
+        'products',
+        'categories',
+        'users',
+        'commissionPayments',
+        'stockAudits',
+        'avarias',
+        'chatSessions',
+        'auditLogs',
+      ];
+
+      const collections: Record<string, any[]> = {};
+      let totalDocs = 0;
+      for (const name of collectionNames) {
+        const items = await fetchAllFromCollection(name);
+        collections[name] = items;
+        totalDocs += items.length;
+      }
+
+      const rows: string[] = [];
+      rows.push(['scope', 'name', 'id', 'data'].join(delimiter));
+
+      const configStoreSettings = settingsSnap.exists() ? serializeFirestoreValue(settingsSnap.data()) : null;
+      const configRolePermissions = permissionsSnap.exists() ? serializeFirestoreValue(permissionsSnap.data()) : null;
+
+      rows.push(
+        ['config', 'storeSettings', '', JSON.stringify(configStoreSettings)].map(escapeCsv).join(delimiter)
+      );
+      rows.push(
+        ['config', 'rolePermissions', '', JSON.stringify(configRolePermissions)].map(escapeCsv).join(delimiter)
+      );
+
+      for (const [collectionName, items] of Object.entries(collections)) {
+        for (const raw of items) {
+          const id = typeof raw?.id === 'string' ? raw.id : '';
+          const data = { ...raw };
+          delete (data as any).id;
+          rows.push(
+            ['collection', collectionName, id, JSON.stringify(data)].map(escapeCsv).join(delimiter)
+          );
+        }
+      }
+
+      handleExportCsv(rows.join('\n'), 'backup-completo-firestore');
+      toast({ title: 'Backup exportado!', description: `Backup completo em CSV baixado (${totalDocs} registros).` });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao exportar backup completo.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      setIsFirestoreBackupCsvExporting(false);
+    }
+  };
+
+  const handleExportOrdersCsv = async () => {
+    if (isOrdersCsvExporting) return;
+    setIsOrdersCsvExporting(true);
+    toast({ title: 'Gerando pedidos em CSV...', description: 'Carregando dados do Firestore.' });
+
+    const delimiter = ';';
+    const escapeCsv = (value: unknown) => {
+      const raw = value == null ? '' : String(value);
+      const escaped = raw.replace(/"/g, '""');
+      const mustQuote = escaped.includes('"') || escaped.includes('\n') || escaped.includes('\r') || escaped.includes(delimiter);
+      return mustQuote ? `"${escaped}"` : escaped;
+    };
+
+    const normalizeValue = (value: unknown): unknown => {
+      if (value == null) return '';
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+      if (value instanceof Date) return value.toISOString();
+      if (Array.isArray(value) || typeof value === 'object') {
+        const maybeToDate = (value as { toDate?: () => Date }).toDate;
+        if (typeof maybeToDate === 'function') return maybeToDate().toISOString();
+        const seconds = (value as { seconds?: number }).seconds;
+        if (typeof seconds === 'number') return new Date(seconds * 1000).toISOString();
+        try {
+          return JSON.stringify(value);
+        } catch {
+          return String(value);
+        }
+      }
+      return String(value);
+    };
+
+    const getCreatedByName = (order: Partial<Order> & { createdById?: string; createdByName?: string; source?: string }) => {
+      const explicit = order.createdByName?.trim();
+      if (explicit) return explicit;
+      const byId = order.createdById;
+      if (byId) return users.find((u) => u.id === byId)?.name || '';
+      if (order.source === 'catalogo') return 'Cliente (catálogo)';
+      return '';
+    };
+
+    try {
+      const allOrders = await fetchAllRawFromCollection('orders');
+
+      const headers = [
+        'orderId',
+        'orderDate',
+        'status',
+        'paymentMethod',
+        'total',
+        'discount',
+        'downPayment',
+        'installments',
+        'installmentValue',
+        'commission',
+        'commissionPaid',
+        'sellerId',
+        'sellerName',
+        'createdByName',
+        'createdFromIp',
+        'source',
+        'customerName',
+        'customerCpf',
+        'customerCode',
+        'customerPhone',
+        'customerPhone2',
+        'customerPhone3',
+        'customerEmail',
+        'customerZip',
+        'customerAddress',
+        'customerNumber',
+        'customerComplement',
+        'customerNeighborhood',
+        'customerCity',
+        'customerState',
+        'observations',
+        'installmentDetailsJson',
+        'attachmentsJson',
+        'itemId',
+        'itemName',
+        'itemPrice',
+        'itemQuantity',
+      ];
+
+      const rows: string[] = [];
+      rows.push(headers.join(delimiter));
+
+      for (const raw of allOrders) {
+        const order = raw as Partial<Order> & { id?: string };
+        const customer = (order.customer || {}) as Partial<CustomerInfo>;
+        const createdByName = getCreatedByName(order);
+
+        const baseRow: Record<string, unknown> = {
+          orderId: displayNumericCode(order.id),
+          orderDate: order.date ?? '',
+          status: order.status ?? '',
+          paymentMethod: order.paymentMethod ?? '',
+          total: order.total ?? '',
+          discount: order.discount ?? '',
+          downPayment: order.downPayment ?? '',
+          installments: order.installments ?? '',
+          installmentValue: order.installmentValue ?? '',
+          commission: order.commission ?? '',
+          commissionPaid: order.commissionPaid ?? '',
+          sellerId: order.sellerId ?? '',
+          sellerName: order.sellerName ?? '',
+          createdByName,
+          createdFromIp: (order as any).createdFromIp ?? '',
+          source: order.source ?? '',
+          customerName: customer.name ?? '',
+          customerCpf: customer.cpf ?? '',
+          customerCode: customer.code ?? '',
+          customerPhone: customer.phone ?? '',
+          customerPhone2: customer.phone2 ?? '',
+          customerPhone3: customer.phone3 ?? '',
+          customerEmail: customer.email ?? '',
+          customerZip: customer.zip ?? '',
+          customerAddress: customer.address ?? '',
+          customerNumber: customer.number ?? '',
+          customerComplement: customer.complement ?? '',
+          customerNeighborhood: customer.neighborhood ?? '',
+          customerCity: customer.city ?? '',
+          customerState: customer.state ?? '',
+          observations: order.observations ?? '',
+          installmentDetailsJson: JSON.stringify(order.installmentDetails || []),
+          attachmentsJson: JSON.stringify(order.attachments || []),
+        };
+
+        const items = Array.isArray(order.items) && order.items.length > 0 ? order.items : [{ id: '', name: '', price: 0, quantity: 0, imageUrl: '' }];
+        for (const item of items as any[]) {
+          const rowObj: Record<string, unknown> = {
+            ...baseRow,
+            itemId: item?.id ?? '',
+            itemName: item?.name ?? '',
+            itemPrice: item?.price ?? '',
+            itemQuantity: item?.quantity ?? '',
+          };
+          rows.push(headers.map((h) => escapeCsv(normalizeValue(rowObj[h]))).join(delimiter));
+        }
+      }
+
+      handleExportCsv(rows.join('\n'), 'pedidos');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao exportar pedidos em CSV.';
+      toast({ title: 'Erro', description: message, variant: 'destructive' });
+    } finally {
+      setIsOrdersCsvExporting(false);
+    }
   };
 
 
@@ -227,9 +680,155 @@ export default function ConfiguracaoPage() {
 
     const reader = new FileReader();
     reader.onload = async (e) => {
+      const restoreStartedAt = Date.now();
+      let willReload = false;
+      try {
+        window.localStorage.setItem('admin.restore.inflight.v1', String(restoreStartedAt));
+      } catch {
+      }
       try {
         const text = e.target?.result as string;
         const data = JSON.parse(text);
+
+        const { db } = getClientFirebase();
+
+        const commitWithRetry = async (batch: ReturnType<typeof writeBatch>, op: 'delete' | 'write') => {
+          let delayMs = 600;
+          for (let attempt = 0; attempt < 6; attempt += 1) {
+            try {
+              await batch.commit();
+              return;
+            } catch (error) {
+              const code = (error as { code?: unknown } | null)?.code;
+              const shouldRetry = code === 'resource-exhausted' || code === 'unavailable' || code === 'deadline-exceeded';
+              if (!shouldRetry || attempt === 5) {
+                throw error instanceof Error ? error : new Error(`Firestore ${op} failed`);
+              }
+              await sleep(delayMs);
+              delayMs = Math.min(10_000, Math.floor(delayMs * 1.7));
+            }
+          }
+        };
+
+        const deleteAllDocs = async (collectionName: string) => {
+          let last: QueryDocumentSnapshot<DocumentData> | null = null;
+          while (true) {
+            const q: Query<DocumentData> = last
+              ? query(collection(db, collectionName), orderBy(documentId()), startAfter(last), limit(450))
+              : query(collection(db, collectionName), orderBy(documentId()), limit(450));
+            const snap: QuerySnapshot<DocumentData> = await getDocs(q);
+            if (snap.empty) break;
+
+            const batch = writeBatch(db);
+            snap.docs.forEach((d: QueryDocumentSnapshot<DocumentData>) => batch.delete(d.ref));
+            await commitWithRetry(batch, 'delete');
+            last = snap.docs[snap.docs.length - 1] ?? null;
+          }
+        };
+
+        const restoreCollection = async (collectionName: string, rawItems: unknown) => {
+          const items = Array.isArray(rawItems) ? rawItems : [];
+          await deleteAllDocs(collectionName);
+
+          let batch = writeBatch(db);
+          let ops = 0;
+
+          const commitIfNeeded = async (force = false) => {
+            if (!force && ops < 450) return;
+            if (ops === 0) return;
+            await commitWithRetry(batch, 'write');
+            batch = writeBatch(db);
+            ops = 0;
+          };
+
+          for (let i = 0; i < items.length; i += 1) {
+            const raw = items[i] as any;
+            const id = typeof raw?.id === 'string' && raw.id.trim() ? raw.id.trim() : `restored-${collectionName}-${Date.now()}-${i}`;
+            const decoded = deserializeFirestoreValue(raw);
+            const { id: _omit, ...docData } = decoded ?? {};
+            batch.set(doc(db, collectionName, id), removeUndefinedDeep(docData));
+            ops += 1;
+            await commitIfNeeded(false);
+          }
+
+          await commitIfNeeded(true);
+        };
+
+        const isFirestoreBackup =
+          !!data &&
+          typeof data === 'object' &&
+          (data as any).version === 1 &&
+          !!(data as any).collections &&
+          typeof (data as any).collections === 'object' &&
+          !!(data as any).config &&
+          typeof (data as any).config === 'object';
+
+        if (isFirestoreBackup) {
+          if (!user || (user.role !== 'admin' && user.role !== 'gerente')) {
+            toast({ title: 'Acesso negado', description: 'Apenas admin e gerente podem restaurar backup.', variant: 'destructive' });
+            return;
+          }
+
+          toast({ title: 'Restaurando backup completo...', description: 'Escrevendo dados no Firestore. Isso pode demorar.' });
+
+          const payload = data as any;
+          const config = payload.config ?? {};
+          const collectionsPayload = payload.collections ?? {};
+
+          try {
+            window.localStorage.setItem('admin.orders.cache.v1', JSON.stringify([]));
+          } catch {
+          }
+
+          const storeSettings = config.storeSettings ? deserializeFirestoreValue(config.storeSettings) : null;
+          const rolePermissions = config.rolePermissions ? deserializeFirestoreValue(config.rolePermissions) : null;
+
+          if (storeSettings) {
+            await setDoc(doc(db, 'config', 'storeSettings'), removeUndefinedDeep(storeSettings));
+          }
+          if (rolePermissions) {
+            await setDoc(doc(db, 'config', 'rolePermissions'), removeUndefinedDeep(rolePermissions));
+          }
+
+          const collectionNames = Object.keys(collectionsPayload);
+          for (const name of collectionNames) {
+            await restoreCollection(name, collectionsPayload[name]);
+          }
+
+          try {
+            const rawOrders = collectionsPayload?.orders;
+            const items = Array.isArray(rawOrders) ? rawOrders : [];
+            const decodedOrders = items
+              .map((raw: any, i: number) => {
+                const id =
+                  typeof raw?.id === 'string' && raw.id.trim()
+                    ? raw.id.trim()
+                    : `restored-orders-${restoreStartedAt}-${i}`;
+                const decoded = deserializeFirestoreValue(raw);
+                const { id: _omit, ...docData } = decoded ?? {};
+                return { ...docData, id };
+              })
+              .filter((o: any) => !!o && typeof o.id === 'string' && o.id.trim().length > 0);
+
+            const getSortTime = (order: any) => {
+              const raw = (order?.date || order?.createdAt || '') as string;
+              const t = Date.parse(raw);
+              return Number.isFinite(t) ? t : 0;
+            };
+            decodedOrders.sort((a: any, b: any) => getSortTime(b) - getSortTime(a));
+
+            const RECENT_ORDERS_LIMIT = 1000;
+            window.localStorage.setItem('admin.orders.cache.v1', JSON.stringify(decodedOrders.slice(0, RECENT_ORDERS_LIMIT)));
+          } catch {
+          }
+
+          await Promise.race([waitForPendingWrites(db), sleep(8000)]);
+
+          toast({ title: 'Backup Restaurado!', description: 'Dados completos foram gravados no Firestore.' });
+          willReload = true;
+          window.setTimeout(() => window.location.reload(), 250);
+          return;
+        }
 
         if (data.settings && data.products && data.orders && data.categories && data.users) {
           await restoreSettings(data.settings);
@@ -238,7 +837,10 @@ export default function ConfiguracaoPage() {
           if (data.permissions) {
              await updatePermissions(data.permissions);
           }
+          await Promise.race([waitForPendingWrites(db), sleep(8000)]);
           toast({ title: 'Backup Restaurado!', description: 'Os dados da loja foram restaurados com sucesso.' });
+          willReload = true;
+          window.setTimeout(() => window.location.reload(), 250);
         } else {
           throw new Error('Formato de arquivo de backup inválido.');
         }
@@ -246,8 +848,64 @@ export default function ConfiguracaoPage() {
         console.error("Failed to restore backup:", error);
         toast({ title: 'Erro ao Restaurar', description: 'O arquivo de backup é inválido ou está corrompido.', variant: 'destructive' });
       } finally {
+        if (!willReload) {
+          try {
+            window.localStorage.removeItem('admin.restore.inflight.v1');
+          } catch {
+          }
+        }
         if (fileInputRef.current) {
             fileInputRef.current.value = '';
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleCatalogImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const text = e.target?.result as string;
+        const parsed = JSON.parse(text);
+
+        const isArray = Array.isArray(parsed);
+        const isObject = !!parsed && typeof parsed === 'object' && !isArray;
+
+        if (isArray) {
+          const first = parsed[0] as any;
+          const looksLikeCategory = !!first && typeof first === 'object' && ('subcategories' in first || 'order' in first);
+          if (looksLikeCategory) {
+            await importCatalogData({ categories: parsed }, logAction, user);
+          } else {
+            await importCatalogData({ products: parsed }, logAction, user);
+          }
+          return;
+        }
+
+        if (isObject) {
+          const obj = parsed as any;
+          const productsFromFile = Array.isArray(obj.products) ? obj.products : undefined;
+          const categoriesFromFile = Array.isArray(obj.categories) ? obj.categories : undefined;
+
+          if (!productsFromFile && !categoriesFromFile) {
+            throw new Error('Formato inválido para catálogo.');
+          }
+
+          await importCatalogData({ products: productsFromFile, categories: categoriesFromFile }, logAction, user);
+          return;
+        }
+
+        throw new Error('Formato inválido para catálogo.');
+      } catch (error) {
+        console.error("Failed to import catalog:", error);
+        toast({ title: 'Erro ao Importar', description: 'O arquivo de catálogo é inválido ou está corrompido.', variant: 'destructive' });
+      } finally {
+        if (catalogFileInputRef.current) {
+          catalogFileInputRef.current.value = '';
         }
       }
     };
@@ -702,6 +1360,10 @@ export default function ConfiguracaoPage() {
                         <ShoppingCart className="mr-2 h-4 w-4" />
                         Exportar Pedidos
                     </Button>
+                    <Button variant="outline" onClick={() => void handleExportOrdersCsv()} disabled={isOrdersCsvExporting}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Exportar Pedidos em CSV
+                    </Button>
                     <Button variant="outline" onClick={() => handleExport(customers, 'clientes')}>
                         <Users className="mr-2 h-4 w-4" />
                         Exportar Clientes
@@ -710,9 +1372,17 @@ export default function ConfiguracaoPage() {
                         <Package className="mr-2 h-4 w-4" />
                         Exportar Produtos
                     </Button>
-                    <Button variant="outline" onClick={handleExportFullBackup}>
+                    <Button variant="outline" onClick={() => void handleExportFullBackup()} disabled={isBackupExporting}>
                         <FileDown className="mr-2 h-4 w-4" />
                         Exportar Backup Completo
+                    </Button>
+                    <Button variant="outline" onClick={() => void handleExportFirestoreFullBackup()} disabled={isFirestoreBackupExporting}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Exportar Backup Completo (Firestore)
+                    </Button>
+                    <Button variant="outline" onClick={() => void handleExportFirestoreFullBackupCsv()} disabled={isFirestoreBackupCsvExporting}>
+                        <FileDown className="mr-2 h-4 w-4" />
+                        Exportar Backup Completo (Firestore) em CSV
                     </Button>
                 </div>
               </div>
@@ -724,6 +1394,23 @@ export default function ConfiguracaoPage() {
                 </Button>
                 <Input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleRestore} />
                  <p className="text-xs text-muted-foreground mt-2">A restauração substitui todos os dados (pedidos, produtos, categorias, usuários, etc.).</p>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 mt-6">Importar Catálogo</h3>
+                <Button variant="outline" onClick={() => catalogFileInputRef.current?.click()}>
+                  <Upload className="mr-2 h-4 w-4" />
+                  Importar Produtos/Categorias
+                </Button>
+                <Input type="file" ref={catalogFileInputRef} className="hidden" accept=".json" onChange={handleCatalogImport} />
+                <p className="text-xs text-muted-foreground mt-2">Substitui produtos e/ou categorias conforme o arquivo (não altera pedidos/usuários).</p>
+              </div>
+              <div>
+                <h3 className="font-semibold mb-2 mt-6">Catálogo de Exemplo</h3>
+                <Button variant="outline" onClick={() => seedSampleCatalog(logAction, user)}>
+                  <Package className="mr-2 h-4 w-4" />
+                  Criar Catálogo de Exemplo
+                </Button>
+                <p className="text-xs text-muted-foreground mt-2">Só funciona se produtos e categorias estiverem vazios.</p>
               </div>
           </CardContent>
       </Card>

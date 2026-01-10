@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useToast } from '@/hooks/use-toast';
 import type { CustomerInfo, Order } from '@/lib/types';
 import { getClientFirebase } from '@/lib/firebase-client';
-import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { collection, query, where, getDocs } from 'firebase/firestore';
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const CUSTOMER_SESSION_STORAGE_KEY = 'customerSession';
@@ -147,15 +147,32 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
       const { db } = getClientFirebase();
       const ordersRef = collection(db, 'orders');
       const q = query(ordersRef, where('customer.cpf', '==', customer.cpf));
-      
-      const unsubscribe = onSnapshot(q, (querySnapshot) => {
-          const ordersData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Order));
-          setCustomerOrders(ordersData);
-      }, (error) => {
-          console.error("Error fetching customer orders: ", error);
-      });
+      let cancelled = false;
 
-      return () => unsubscribe();
+      const timeoutId = window.setTimeout(() => {
+        if (cancelled) return;
+        setCustomerOrders([]);
+      }, 8000);
+
+      Promise.race([
+        getDocs(q),
+        new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('timeout')), 8000)),
+      ])
+        .then((querySnapshot) => {
+          if (cancelled) return;
+          window.clearTimeout(timeoutId);
+          const ordersData = querySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Order));
+          setCustomerOrders(ordersData);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          window.clearTimeout(timeoutId);
+        });
+
+      return () => {
+        cancelled = true;
+        window.clearTimeout(timeoutId);
+      };
     } catch (error) {
       setCustomerOrders([]);
       return;
@@ -181,30 +198,10 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
     const q = query(ordersRef, where('customer.cpf', '==', normalizedCpf));
 
     try {
-        const querySnapshot = await new Promise<import('firebase/firestore').QuerySnapshot>((resolve, reject) => {
-            let unsubscribe: (() => void) | null = null;
-            let settled = false;
-            const timeoutId = window.setTimeout(() => {
-                if (settled) return;
-                settled = true;
-                unsubscribe?.();
-                reject(new Error('timeout'));
-            }, 8000);
-
-            unsubscribe = onSnapshot(q, (snapshot) => {
-                if (settled) return;
-                settled = true;
-                window.clearTimeout(timeoutId);
-                unsubscribe?.();
-                resolve(snapshot);
-            }, (error) => {
-                if (settled) return;
-                settled = true;
-                window.clearTimeout(timeoutId);
-                unsubscribe?.();
-                reject(error);
-            });
-        });
+        const querySnapshot = await Promise.race([
+          getDocs(q),
+          new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error('timeout')), 8000)),
+        ]);
         
         const customerOrders = querySnapshot.docs.map(doc => doc.data() as Order);
 
@@ -244,7 +241,6 @@ export const CustomerAuthProvider = ({ children }: { children: ReactNode }) => {
         }
 
     } catch (error) {
-        console.error("Error during login:", error);
         toast({ title: 'Erro de Autenticação', description: 'Não foi possível verificar suas credenciais. Tente novamente.', variant: 'destructive' });
         return false;
     }
